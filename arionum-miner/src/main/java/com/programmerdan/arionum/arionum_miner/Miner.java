@@ -69,6 +69,14 @@ public class Miner {
 	 */
 	protected final AtomicLong hashes;
 	/**
+	 * Count of hashes this reporting period.
+	 */
+	protected final AtomicLong currentHashes;
+	/**
+	 * Record of best DL so far this block
+	 */
+	protected final AtomicLong bestDL;
+	/**
 	 * Count of all submits attempted
 	 */
 	protected final AtomicLong sessionSubmits;
@@ -101,6 +109,7 @@ public class Miner {
 	
 	/* Update related */
 	private long lastUpdate;
+	private long lastReport; 
 	private int cycles;
 	private int skips;
 	private int failures;
@@ -119,6 +128,8 @@ public class Miner {
 		this.hasherCount = new AtomicInteger();
 		
 		this.hashes = new AtomicLong();
+		this.currentHashes = new AtomicLong();
+		this.bestDL = new AtomicLong(Long.MAX_VALUE);
 		this.sessionSubmits = new AtomicLong();
 		this.sessionRejects = new AtomicLong();
 		
@@ -167,7 +178,6 @@ public class Miner {
 				public Boolean call() {
 					try {
 						if (cycles > 0 && (System.currentTimeMillis() - lastUpdate) < (UPDATING_DELAY * .5)) {
-							// TESTINF: System.out.println("Skipping an update -- too soon.");
 							skips++;
 							return Boolean.FALSE;
 						}
@@ -182,7 +192,6 @@ public class Miner {
 									.append("&hashrate=").append(cummSpeed);
 						}
 						
-						// TESTINF: System.out.println(extra.toString());
 						URL url = new URL(extra.toString());
 						HttpURLConnection con = (HttpURLConnection) url.openConnection();
 						con.setRequestMethod("GET");
@@ -199,7 +208,7 @@ public class Miner {
 						}
 
 						JSONObject obj = (JSONObject) (new JSONParser()).parse(new InputStreamReader(con.getInputStream()));
-						// TESTINF: System.out.println(obj.toJSONString());
+
 						if (!"ok".equals((String) obj.get("status"))) {
 							con.disconnect();
 							failures++;
@@ -210,9 +219,10 @@ public class Miner {
 						String localData = (String) jsonData.get("block");
 						if (!localData.equals(data)) {
 							System.out.print("Update transitioned to new block. "
-									+ (lastBlockUpdate > 0 ? " Time since last block update: " + ((System.currentTimeMillis() - lastBlockUpdate) / 1000) + "s. " : ""));
+									+ (lastBlockUpdate > 0 ? " Last block took: " + ((System.currentTimeMillis() - lastBlockUpdate) / 1000) + "s. " : ""));
 							data = localData;
 							lastBlockUpdate = System.currentTimeMillis();
+							System.out.print("Best DL on last block: " + bestDL.getAndSet(Long.MAX_VALUE) + " ");
 							endline = true;
 						}
 						BigInteger localDifficulty = new BigInteger((String) jsonData.get("difficulty"));
@@ -228,11 +238,18 @@ public class Miner {
 						} else {
 							localLimit = 240;
 						}
-						if (localLimit != limit || cycles == 3) {
+						
+						if (limit != localLimit) {
 							limit = localLimit;
-							System.out.print("MinDL: " + limit + " \n Last Reported Speed: " + cummSpeed
-									+ "  Updates last minute: " + updates + " Skipped: " + skips + " Failed: " + failures
-									+ "\n Time since last block update: " + ((System.currentTimeMillis() - lastBlockUpdate) / 1000) + "s");
+						}
+						
+						long sinceLastReport = System.currentTimeMillis() - lastReport;
+						if (sinceLastReport > 15000l) {//localLimit != limit || cycles == 3 || cycles == 18) {
+							lastReport = System.currentTimeMillis();
+							System.out.print("MinDL: " + limit + " \n  Total Hashes: " + hashes.get() + "H  Overall Avg Speed: " + avgSpeed(wallClockBegin) + "H/s  Last Reported Speed: " + cummSpeed
+									+ "H/s\n  Updates last " + (sinceLastReport / 1000) + "s: " + updates + " Skipped: " + skips + " Failed: " + failures
+									+ "\n  Time since last block update: " + ((System.currentTimeMillis() - lastBlockUpdate) / 1000) + "s"
+									+ " Best DL so far: " + bestDL.get() + "\n  Total time mining this session: " + ((System.currentTimeMillis() - wallClockBegin)/1000l) + "s");
 							skips = 0;
 							failures = 0;
 							updates = 0;
@@ -295,7 +312,7 @@ public class Miner {
 		this.submitters.shutdown();
 	}
 	
-	protected void submit(final String nonce, final String argon) {
+	protected void submit(final String nonce, final String argon, final long submitDL) {
 		this.submitters.submit(new Runnable() {
 			public void run() {
 				StringBuilder extra = new StringBuilder(node);
@@ -330,7 +347,8 @@ public class Miner {
 					
 					out.writeBytes(data.toString());
 					
-					System.out.println("Sending to " + extra.toString() + " Content:\n" + data.toString());
+					System.out.println("Submitting to " + node + " a " + submitDL + " DL nonce: " +  nonce + " argon: " + argon);
+					//System.out.println("Sending to " + extra.toString() + " Content:\n" + data.toString());
 					
 					out.flush();
 					out.close();
@@ -354,13 +372,13 @@ public class Miner {
 						System.out.println("Submit of " + nonce + " confirmed!");
 					}
 					
-					System.out.println("Determination based on reply: " + obj.toJSONString());
+					//System.out.println("Determination based on reply: " + obj.toJSONString());
 					
 					con.disconnect();
 					
 				} catch (IOException | ParseException ioe) {
 					System.err.println("Non-fatal but tragic: Failed during construction or receipt of submission: " + ioe.getMessage());
-					ioe.printStackTrace(); // TODO: hide
+					//ioe.printStackTrace();
 				}
 			}
 		});
@@ -376,7 +394,11 @@ public class Miner {
 	}
 	
 	private String speed() {
-		return String.format("%f", ((double) this.hashes.getAndSet(0)) / (((double) (System.currentTimeMillis() - this.lastUpdate)) / 1000d));
+		return String.format("%f", ((double) this.currentHashes.getAndSet(0)) / (((double) (System.currentTimeMillis() - this.lastUpdate)) / 1000d));
+	}
+
+	private String avgSpeed(long clockBegin) {
+		return String.format("%f", this.hashes.doubleValue() / (((double) (System.currentTimeMillis() - clockBegin)) / 1000d));
 	}
 	
 	protected BigInteger getDifficulty() {

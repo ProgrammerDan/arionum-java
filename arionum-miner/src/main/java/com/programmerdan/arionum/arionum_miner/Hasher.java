@@ -40,18 +40,18 @@ public class Hasher implements Runnable {
 	private Miner parent;
 	private boolean active;
 	private String id;
+	private long hashCount;
 
 	public Hasher(Miner parent, String id) {
 		this.parent = parent;
 		this.id = id;
+		this.hashCount = 0l;
 	}
 
 	public void run() {
 		this.parent.hasherCount.incrementAndGet();
 		active = true;
 		long start = System.currentTimeMillis();
-		long hashCount = 0l;
-		long bestDuration = Long.MAX_VALUE;
 
 		byte[] nonce = new byte[32];
 		String encNonce = null;
@@ -71,21 +71,22 @@ public class Hasher implements Runnable {
 		try {
 			sha512 = MessageDigest.getInstance("SHA-512");
 		} catch (NoSuchAlgorithmException e1) {
-			// TODO Auto-generated catch block
+			System.err.println("Unable to find SHA-512 algorithm! Fatal error.");
 			e1.printStackTrace();
+			System.exit(1);
 			active = false;
 		}
-		long report = System.currentTimeMillis();
-		long reportCount = 0l;
-		if (active)
+		if (active) {
 			System.out.println(id + "] Spinning up hashing worker.");
+		}
+		
 		while (active) {
 			try {
-				BigInteger difficulty = parent.getDifficulty(); // BigInteger.valueOf(176824189l);
+				BigInteger difficulty = parent.getDifficulty();
 
 				random.nextBytes(nonce);
 				encNonce = Base64.getEncoder().encodeToString(nonce);
-				encNonce = encNonce.replaceAll("[^a-zA-Z0-9]", "");
+				encNonce = encNonce.replaceAll("[^a-zA-Z0-9]", ""); // TODO: static test vs other impls
 				hashBase = new StringBuilder();
 				hashBase.append(parent.getPublicKey()).append("-");
 				hashBase.append(encNonce).append("-");
@@ -101,7 +102,7 @@ public class Hasher implements Runnable {
 				}
 				byteBase = sha512.digest(byteBase);
 				// see https://stackoverflow.com/a/33085670
-				hashedHash = new StringBuilder();
+				hashedHash = new StringBuilder(); // TODO: Timing tests.
 				// for (int j = 0; j < byteBase.length; j++) {
 				// hashedHash.append(Integer.toString((byteBase[j] & 0xff) +
 				// 0x100, 16).substring(1));
@@ -109,7 +110,6 @@ public class Hasher implements Runnable {
 				// or see https://stackoverflow.com/a/19722967
 				BigInteger bi = new BigInteger(1, byteBase);
 				hashedHash.append(String.format("%0" + (byteBase.length << 1) + "x", bi));
-				// System.out.println(hashedHash.toString());
 
 				StringBuilder duration = new StringBuilder();
 				duration.append(hexdec_equiv(hashedHash, 10)).append(hexdec_equiv(hashedHash, 15))
@@ -121,42 +121,20 @@ public class Hasher implements Runnable {
 				// binary to hex to dec; go straight from bin to dec for max
 				// eff.
 
-				long finalDuration = new BigInteger(duration.toString()).divide(difficulty).longValue(); // TODO:
-																											// 50000
-																											// ==
-																											// difficulty
-				// duration.toString().replaceFirst("^[0]+", "")
+				long finalDuration = new BigInteger(duration.toString()).divide(difficulty).longValue();
 				if (finalDuration > 0 && finalDuration <= parent.getLimit()) {
-					/*
-					 * TESTINF: matches php reference in closed tests:
-					 * StringBuilder duration2 = new StringBuilder();
-					 * duration2.append(hashedHash.substring(20, 22))
-					 * .append(hashedHash.substring(30, 32))
-					 * .append(hashedHash.substring(40, 42))
-					 * .append(hashedHash.substring(46, 48))
-					 * .append(hashedHash.substring(62, 64))
-					 * .append(hashedHash.substring(80, 82))
-					 * .append(hashedHash.substring(90, 92))
-					 * .append(hashedHash.substring(110, 112));
-					 */
-					System.out.println(id + "] Found a nonce to submit with DL " + finalDuration + ": " + encNonce
-							+ "  /  " + argon);
-					// TESTINF: matches php reference in closed tests:
-					// System.out.println(duration2.toString() + " - " +
-					// duration.toString() + " - " +
-					// duration.toString().replaceFirst("^[0]+", "") + " vs " +
-					// difficulty + " ---- " + hashedHash);
-					parent.submit(encNonce, argon);
+
+					parent.submit(encNonce, argon, finalDuration);
 				}
-				if (finalDuration < bestDuration) {
-					bestDuration = finalDuration;
-				}
+				
+				parent.bestDL.getAndUpdate( (dl) -> {if (finalDuration < dl) return finalDuration; else return dl;} );
+				
 				hashCount++;
-				reportCount++;
 				parent.hashes.incrementAndGet();
-				long reportElapse = (System.currentTimeMillis() - report);
-				if (reportElapse > 2000) {
-					// TESTINF: System.out.println("Last Data: " + hashBase);
+				parent.currentHashes.incrementAndGet();
+				//long reportElapse = (System.currentTimeMillis() - report);
+				/*if (reportElapse > 2000) {
+					 TESTINF: System.out.println("Last Data: " + hashBase);
 					long elapse = (System.currentTimeMillis() - start) / 1000;
 
 					System.out.println(id + "] All Time Rate: " + (hashCount / elapse) + "H/s Active Rate: "
@@ -165,7 +143,9 @@ public class Hasher implements Runnable {
 					report = System.currentTimeMillis();
 					reportCount = 0l;
 					bestDuration = Long.MAX_VALUE;
-				}
+					
+				}*/
+				
 			} catch (Exception e) {
 				System.err.println(id + "] This worker failed somehow. Killing it.");
 				e.printStackTrace();
@@ -174,6 +154,10 @@ public class Hasher implements Runnable {
 		}
 		System.out.println(id + "] This worker is now inactive.");
 		this.parent.hasherCount.decrementAndGet();
+	}
+	
+	public long getHashes() {
+		return this.hashCount;
 	}
 
 	public boolean isActive() {

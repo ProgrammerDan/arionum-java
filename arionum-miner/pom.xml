@@ -4,7 +4,7 @@
 
 	<groupId>com.programmerdan.arionum</groupId>
 	<artifactId>arionum-miner</artifactId>
-	<version>0.0.2-SNAPSHOT</version>
+	<version>0.0.3-SNAPSHOT</version>
 	<packaging>jar</packaging>
 
 	<name>arionum-miner-java</name>
