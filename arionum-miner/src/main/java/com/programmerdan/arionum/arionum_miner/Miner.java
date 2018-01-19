@@ -52,7 +52,7 @@ import org.json.simple.parser.ParseException;
 public class Miner {
 	
 	public static final long UPDATING_DELAY = 2000l;
-	public static final int HASHER_COUNT = 1; // TODO: expose as param
+	private int maxHashers;
 	/**
 	 * Non-main thread group that handles submitting nonces.
 	 */
@@ -87,23 +87,24 @@ public class Miner {
 	/* ==== Now update / init vars ==== */
 	
 	private MinerType type;
-	
+
+	/* Block / Data related */
 	private String node;
-	
 	private String worker;
-	
 	private String publicKey;
-	
 	private String privateKey;
-	
 	private String data;
-	
 	private BigInteger difficulty;
-	
 	private long limit;
 	
+	private long lastBlockUpdate;
+	
+	/* Update related */
 	private long lastUpdate;
 	private int cycles;
+	private int skips;
+	private int failures;
+	private int updates;
 	
 
 	public static void main(String[] args) {
@@ -112,7 +113,7 @@ public class Miner {
 	
 	public Miner(String[] args) {
 		//TODO: increase
-		this.hashers = Executors.newSingleThreadExecutor();
+		this.hashers = Executors.newCachedThreadPool();
 		this.updaters = Executors.newSingleThreadExecutor();
 		this.submitters = Executors.newCachedThreadPool();
 		this.hasherCount = new AtomicInteger();
@@ -127,8 +128,12 @@ public class Miner {
 			this.publicKey = args[2].trim();
 			if (MinerType.solo.equals(this.type)) {
 				this.privateKey = args[3].trim();
-			} else {
+				this.maxHashers = args.length > 4 ? Integer.parseInt(args[4].trim()) : 1;
+			} else if (MinerType.pool.equals(this.type)) {
 				this.privateKey = this.publicKey;
+				this.maxHashers = args.length > 3 ? Integer.parseInt(args[3].trim()) : 1;
+			} else if (MinerType.test.equals(this.type)) { // internal test mode, transient benchmarking.
+				this.maxHashers = args.length > 2 ? Integer.parseInt(args[2].trim()) : 1;
 			}
 		} catch (Exception e) {
 			System.err.println("Invalid configuration: ");
@@ -136,6 +141,8 @@ public class Miner {
 			System.err.println("  node: " + this.node);
 			System.err.println("  public-key: " + this.publicKey);
 			System.err.println("  private-key: " + this.privateKey);
+			System.err.println("  hasher-count: " + this.maxHashers);
+			System.exit(1);
 		}
 		
 		this.limit = 240; // default
@@ -143,25 +150,36 @@ public class Miner {
 	}
 	
 	public void start() {
+		if (MinerType.test.equals(this.type)) {
+			startTest();
+			return;
+		}
 		active = true;
 		final long wallClockBegin = System.currentTimeMillis();
 		this.lastUpdate = wallClockBegin;
 		boolean firstRun = true;
 		cycles = 0;
+		skips = 0;
+		failures = 0;
+		updates = 0;
 		while (active) {
 			Future<Boolean> update = this.updaters.submit(new Callable<Boolean>() {
 				public Boolean call() {
 					try {
-						if (cycles > 0 && System.currentTimeMillis() - lastUpdate < (UPDATING_DELAY * .75)) {
+						if (cycles > 0 && (System.currentTimeMillis() - lastUpdate) < (UPDATING_DELAY * .5)) {
 							// TESTINF: System.out.println("Skipping an update -- too soon.");
+							skips++;
 							return Boolean.FALSE;
 						}
+						boolean endline = false;
+						
+						String cummSpeed = speed();
 						StringBuilder extra = new StringBuilder(node);
 						extra.append("/mine.php?q=info");
 						if (MinerType.pool.equals(type)) {
 							extra.append("&worker=").append(worker)
 									.append("&address=").append(privateKey)
-									.append("&hashrate=").append(speed());
+									.append("&hashrate=").append(cummSpeed);
 						}
 						
 						// TESTINF: System.out.println(extra.toString());
@@ -176,6 +194,7 @@ public class Miner {
 						if (status != HttpURLConnection.HTTP_OK) {
 							System.out.println("Update failure: " + con.getResponseMessage());
 							con.disconnect();
+							failures ++;
 							return Boolean.FALSE;
 						}
 
@@ -183,19 +202,24 @@ public class Miner {
 						// TESTINF: System.out.println(obj.toJSONString());
 						if (!"ok".equals((String) obj.get("status"))) {
 							con.disconnect();
+							failures++;
 							return Boolean.FALSE;
 						}
 						
 						JSONObject jsonData = (JSONObject) obj.get("data");
 						String localData = (String) jsonData.get("block");
 						if (!localData.equals(data)) {
-							System.out.print("Update transitioned to new block. ");
+							System.out.print("Update transitioned to new block. "
+									+ (lastBlockUpdate > 0 ? " Time since last block update: " + ((System.currentTimeMillis() - lastBlockUpdate) / 1000) + "s. " : ""));
 							data = localData;
+							lastBlockUpdate = System.currentTimeMillis();
+							endline = true;
 						}
 						BigInteger localDifficulty = new BigInteger((String) jsonData.get("difficulty"));
 						if (!localDifficulty.equals(difficulty)) {
 							System.out.print("Difficulty updated to " + localDifficulty + ". ");
 							difficulty = localDifficulty;
+							endline = true;
 						}
 						long localLimit = 0;
 						if (MinerType.pool.equals(type)) {
@@ -206,15 +230,23 @@ public class Miner {
 						}
 						if (localLimit != limit || cycles == 3) {
 							limit = localLimit;
-							System.out.println("MinDL: " + limit);
+							System.out.print("MinDL: " + limit + " \n Last Reported Speed: " + cummSpeed
+									+ "  Updates last minute: " + updates + " Skipped: " + skips + " Failed: " + failures
+									+ "\n Time since last block update: " + ((System.currentTimeMillis() - lastBlockUpdate) / 1000) + "s");
+							skips = 0;
+							failures = 0;
+							updates = 0;
+							endline = true;
 						}
 						con.disconnect();
-						
+						updates++;
+						if (endline) System.out.println();
 						return Boolean.TRUE;
 					} catch (IOException | ParseException e) {
 						lastUpdate = System.currentTimeMillis();
-						System.out.println("Update failure: ");
-						e.printStackTrace();
+						System.out.println("Non-fatal Update failure: " + e.getMessage());
+						//e.printStackTrace(); // TODO hide for release, non-fatal errors
+						failures++;
 						return Boolean.FALSE;
 					}
 				}
@@ -236,10 +268,10 @@ public class Miner {
 				}
 			}
 			
-			if (this.hasherCount.get() < HASHER_COUNT) {
-				this.hashers.submit(new Hasher(this));
+			if (this.hasherCount.get() < maxHashers) {
+				this.hashers.submit(new Hasher(this, php_uniqid()));
 			}
-
+			
 			try {
 				Thread.sleep(UPDATING_DELAY);
 			} catch (InterruptedException ie) {
@@ -327,8 +359,8 @@ public class Miner {
 					con.disconnect();
 					
 				} catch (IOException | ParseException ioe) {
-					System.err.println("Failed during construction or receipt of submission: " + ioe.getMessage());
-					ioe.printStackTrace();
+					System.err.println("Non-fatal but tragic: Failed during construction or receipt of submission: " + ioe.getMessage());
+					ioe.printStackTrace(); // TODO: hide
 				}
 			}
 		});
@@ -344,7 +376,7 @@ public class Miner {
 	}
 	
 	private String speed() {
-		return String.format("%f", ((double) this.hashes.getAndSet(0)) / ((System.currentTimeMillis() - this.lastUpdate) / 1000d));
+		return String.format("%f", ((double) this.hashes.getAndSet(0)) / (((double) (System.currentTimeMillis() - this.lastUpdate)) / 1000d));
 	}
 	
 	protected BigInteger getDifficulty() {
@@ -361,5 +393,11 @@ public class Miner {
 	
 	protected String getPublicKey() {
 		return this.publicKey;
+	}
+	
+	private void startTest() {
+		System.out.println("Static tests using " + this.maxHashers + " iterations as cap");
+		
+		System.out.println("Done static testing.");
 	}
 }

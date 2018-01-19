@@ -14,10 +14,16 @@ Enjoy!
 
 To run:
 
-java -jar arionum-miner.jar pool http://aropool.com CHANGEADDRESS
+java -jar arionum-miner.jar pool http://aropool.com CHANGEADDRESS [# miners]
 
 or
 
-java -jar arionum-miner.jar solo node-address public-key private-key
+java -jar arionum-miner.jar solo node-address public-key private-key [# miners]
 
-Please note solo hasn't been tested, but it's 99.9% the same code so should be fine. Pool has been extensively tested.
+Please note solo hasn't been tested, but it's 99.9% the same code so should be fine. Pool has been extensively tested. Rule of thumb is no more then 1 miner per 4 cores/vcores. Leave [# miners] off to default to 1.
+
+
+---------------------
+### TODO
+
+* Add address checking as here: https://github.com/arionum/miner/commit/e14b696362fb79d60c4ff8bc651185740b8021d9
