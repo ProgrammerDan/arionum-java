@@ -44,9 +44,9 @@ import de.mkammerer.argon2.Argon2Factory.Argon2Types;
  * @author ProgrammerDan (Daniel Boston)
  *
  */
-public class DebugHasher extends Hasher {
+public class ExperimentalHasher extends Hasher {
 
-	public DebugHasher(Miner parent, String id) {
+	public ExperimentalHasher(Miner parent, String id) {
 		super(parent, id);
 	}
 	
@@ -66,14 +66,13 @@ public class DebugHasher extends Hasher {
 		String argon = null;
 
 		StringBuilder hashedHash = new StringBuilder();
+		Encoder encoder = Base64.getEncoder();
 		char[] nonceChar = null;
 		StringBuilder nonceSb = null;
-		
+
 		SecureRandom random = new SecureRandom();
 
 		Argon2 argon2 = Argon2Factory.create(Argon2Types.ARGON2i);
-		
-		Encoder encoder = Base64.getEncoder();
 
 		MessageDigest sha512 = null;
 		try {
@@ -88,30 +87,11 @@ public class DebugHasher extends Hasher {
 			System.out.println(id + "] Spun up DEBUG hashing worker in " + (System.currentTimeMillis() - start) + "ms");
 		}
 		
-		long count = 0;
-		long randomData = 0l;
-		long encodeNonce = 0l;
-		long preArgon = 0l;
-		long argonHash = 0l;
-		long postArgon = 0l;
-		long shaHash = 0l;
-		long durationMap = 0l;
-		long duration2Map = 0l;
-		long durationComp = 0l;
-		long duration2Comp = 0l;
-		long statsUpd = 0l;
-		
 		while (active) {
 			try {
-				long tracking = System.currentTimeMillis();
-				
 				BigInteger difficulty = parent.getDifficulty();
 
 				random.nextBytes(nonce);
-
-				randomData += System.currentTimeMillis() - tracking;
-				tracking = System.currentTimeMillis();
-				
 				encNonce = encoder.encodeToString(nonce);
 				
 				// shaves a bit off vs regex -- for this operation, about 50% savings
@@ -123,89 +103,29 @@ public class DebugHasher extends Hasher {
 					}
 				}
 				
-				encodeNonce += System.currentTimeMillis() - tracking;
-				tracking = System.currentTimeMillis();
-				
 				// prealloc probably saves us 10% on this op sequence
 				hashBase = new StringBuilder(238 + parent.getBlockData().length()); // size of key + none + difficult + argon + data + spacers
 				hashBase.append(parent.getPublicKey()).append("-");
 				hashBase.append(nonceSb).append("-");
 				hashBase.append(parent.getBlockData()).append("-");
 				hashBase.append(difficulty);
-				preArgon += System.currentTimeMillis() - tracking;
-				tracking = System.currentTimeMillis();
-				
 				argon = argon2.hash(4, 16384, 4, hashBase.toString());
-				
-				argonHash += System.currentTimeMillis() - tracking;
-				tracking = System.currentTimeMillis();
-				
 				hashBase.append(argon);
 
-				postArgon += System.currentTimeMillis() - tracking;
-				tracking = System.currentTimeMillis();
-				
 				base = hashBase.toString();
 				byteBase = base.getBytes();
 				for (int i = 0; i < 5; i++) {
 					byteBase = sha512.digest(byteBase);
 				}
 				byteBase = sha512.digest(byteBase);
-				
-				shaHash += System.currentTimeMillis() - tracking;
-				tracking = System.currentTimeMillis();
-				
-				// see https://stackoverflow.com/a/33085670
-				hashedHash = new StringBuilder(); // TODO: Timing tests.
-				// for (int j = 0; j < byteBase.length; j++) {
-				// hashedHash.append(Integer.toString((byteBase[j] & 0xff) +
-				// 0x100, 16).substring(1));
-				// }
-				// or see https://stackoverflow.com/a/19722967
-				BigInteger bi = new BigInteger(1, byteBase);
-				hashedHash.append(String.format("%0" + (byteBase.length << 1) + "x", bi));
 
 				StringBuilder duration = new StringBuilder(24);
-				duration.append(hexdec_equiv(hashedHash, 10)).append(hexdec_equiv(hashedHash, 15))
-						.append(hexdec_equiv(hashedHash, 20)).append(hexdec_equiv(hashedHash, 23))
-						.append(hexdec_equiv(hashedHash, 31)).append(hexdec_equiv(hashedHash, 40))
-						.append(hexdec_equiv(hashedHash, 45)).append(hexdec_equiv(hashedHash, 55));
-
-				durationMap += System.currentTimeMillis() - tracking;
-				tracking = System.currentTimeMillis();
-
-				StringBuilder duration2 = new StringBuilder(24);
-				duration2.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
+				duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
 						.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
 						.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
-				
-				duration2Map += System.currentTimeMillis() - tracking;
-				tracking = System.currentTimeMillis();
-				
-				try {
-					assert duration.toString().equals(duration2.toString());
-				} catch (AssertionError ae) {
-					System.err.println(" ASSERT failed: " + duration.toString() + " != " + duration2.toString());
-					ae.printStackTrace();
-					System.exit(1);
-				}
-				
-				// TODO: Bypass double ended conversion; no reason to go from
-				// binary to hex to dec; go straight from bin to dec for max
-				// eff.
 
 				long finalDuration = new BigInteger(duration.toString()).divide(difficulty).longValue();
-				
-				durationComp += System.currentTimeMillis() - tracking;
-				tracking = System.currentTimeMillis();
-
-				
-				duration2Comp += System.currentTimeMillis() - tracking;
-				tracking = System.currentTimeMillis();
-
-				
 				if (finalDuration > 0 && finalDuration <= parent.getLimit()) {
-
 					parent.submit(nonceSb.toString(), argon, finalDuration);
 				}
 				
@@ -215,44 +135,6 @@ public class DebugHasher extends Hasher {
 				parent.hashes.incrementAndGet();
 				parent.currentHashes.incrementAndGet();
 				
-				statsUpd += System.currentTimeMillis() - tracking;
-				tracking = System.currentTimeMillis();
-				
-				if (count > 0 && (count % 1000) == 0) {
-					System.out.println(count + " Hashes Debug Timing Stats: \n"
-							+ "  Random: " + (randomData) + "ms \n"
-							+ "  Encode: " + (encodeNonce) + "ms \n"
-							+ "  PreArg: " + (preArgon) + "ms \n"
-							+ "  Argon2: " + (argonHash) + "ms \n"
-							+ "  PstArg: " + (postArgon) + "ms \n"
-							+ "  sha512: " + (shaHash) + "ms \n"
-							+ "  durmap: " + (durationMap) + "ms \n"
-							+ "  durmp2: " + (duration2Map) + "ms \n"
-							+ "  durcmp: " + (durationComp) + "ms \n"
-							+ "  durat2: " + (duration2Comp) + "ms \n"
-							+ "  statup: " + (statsUpd) + "ms \n"
-							+ "  Arg %: " + ((double) argonHash / (double) (randomData + encodeNonce + preArgon + postArgon+ shaHash + durationMap + duration2Map + durationComp + duration2Comp + statsUpd + argonHash)) * 100d + "%");
-					
-					if (count == 1000000l) {
-						randomData = 0l;
-						encodeNonce = 0l;
-						preArgon = 0l;
-						argonHash = 0l;
-						postArgon = 0l;
-						shaHash = 0l;
-						durationMap = 0l;
-						duration2Map = 0l;
-						durationComp = 0l;
-						duration2Comp = 0l;
-						statsUpd = 0l;
-									
-						count = 0;
-					} else {
-						count ++;
-					}
-				} else {
-					count ++;
-				}
 			} catch (Exception e) {
 				System.err.println(id + "] This worker failed somehow. Killing it.");
 				e.printStackTrace();
@@ -263,9 +145,4 @@ public class DebugHasher extends Hasher {
 		this.parent.hasherCount.decrementAndGet();
 	}
 	
-	public int hexdec_equiv(StringBuilder m, int index) {
-		return Integer.parseInt(m.substring(index * 2, index * 2 + 2), 16);
-	}
-
-
 }

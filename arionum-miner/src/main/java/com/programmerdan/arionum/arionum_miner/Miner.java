@@ -33,6 +33,9 @@ import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.Base64.Encoder;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -533,6 +536,72 @@ public class Miner {
 		BigInteger decInt = Utility.base58_decodeInt(refKey);
 		System.out.println("  base58_decode: (" + decode.length() + ") " + decode );
 		System.out.println("  base58_decodeInt: " + decInt.toString() + " (" + decInt.doubleValue() + ") ");
+		
+
+		byte[] nonce = new byte[32];
+		String encNonce = null;
+		String encNonce2 = null;
+		String encNonce3 = null;
+		String encNonce4 = null;
+		SecureRandom random = new SecureRandom();
+		StringBuilder sb = new StringBuilder();
+		Encoder enc = Base64.getEncoder();
+		char[] arr = null;
+		
+		
+		long a = 0l;
+		long b = 0l;
+		long c = 0l;
+		long d = 0l;
+		
+		for (int i = 0; i < this.maxHashers; i++) {
+			random.nextBytes(nonce);
+			encNonce = enc.encodeToString(nonce);
+			encNonce2 = enc.encodeToString(nonce);
+			encNonce3 = enc.encodeToString(nonce);
+			encNonce4 = enc.encodeToString(nonce);
+			
+			long s = System.currentTimeMillis();
+			encNonce = encNonce.replaceAll("[^a-zA-Z0-9]", ""); // TODO: static test vs other impls
+			a += System.currentTimeMillis() - s;
+			
+			s = System.currentTimeMillis();
+			sb = new StringBuilder(encNonce2.length());
+			arr = encNonce2.toCharArray();
+			for (char ar : arr) {
+				if (ar >= '0' && ar <= '9' || ar >= 'a' && ar <= 'z' || ar >= 'A' && ar <= 'Z') {
+					sb.append(ar);
+				}
+			}
+			encNonce2 = sb.toString();
+			b += System.currentTimeMillis() - s;
+			assert encNonce.equals(encNonce2);
+			
+			s = System.currentTimeMillis();
+			StringBuilder sb2 = new StringBuilder(encNonce3.length());
+			char ar = encNonce3.charAt(0);
+			for (int j = 0; j < encNonce3.length() - 1; ar = encNonce3.charAt(++j)) {
+				if (ar >= '0' && ar <= '9' || ar >= 'a' && ar <= 'z' || ar >= 'A' && ar <= 'Z') {
+					sb2.append(ar);
+				}
+			}
+			encNonce3 = sb2.toString();
+			c += System.currentTimeMillis() - s;
+			assert encNonce.equals(encNonce3);
+			
+			s = System.currentTimeMillis();
+			StringBuilder sb3 = new StringBuilder(encNonce4.length());
+			encNonce4.chars().forEach( (aj) -> {
+				if (aj >= '0' && aj <= '9' || aj >= 'a' && aj <= 'z' || aj >= 'A' && aj <= 'Z') {
+					sb3.append((char) aj);
+				}
+			});
+			encNonce4 = sb3.toString();
+			d += System.currentTimeMillis() - s;
+			assert encNonce.equals(encNonce4);
+		}
+		
+		System.out.println("stripFunction Iterations: " + this.maxHashers + " a: " + a + " b: " + b + " c: " + c + " d: " + d);
 		
 		System.out.println("Done static testing.");
 	}
