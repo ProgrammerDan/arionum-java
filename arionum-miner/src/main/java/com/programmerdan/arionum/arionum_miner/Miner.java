@@ -184,10 +184,10 @@ public class Miner {
 					this.hasherMode = AdvMode.valueOf(args[4].trim());
 				}
 			} else if (MinerType.test.equals(this.type)) { // internal test mode, transient benchmarking.
-				this.maxHashers = args.length > 2 ? Integer.parseInt(args[2].trim()) : 1;
+				this.maxHashers = args.length > 3 ? Integer.parseInt(args[3].trim()) : 1;
 			}
 		} catch (Exception e) {
-			System.err.println("Invalid configuration: ");
+			System.err.println("Invalid configuration: " + (e.getMessage()));
 			System.err.println("  type: " + this.type);
 			System.err.println("  node: " + this.node);
 			System.err.println("  public-key: " + this.publicKey);
@@ -206,6 +206,17 @@ public class Miner {
 			startTest();
 			return;
 		}
+		
+		// commit e14b696362fb port to java from arionum/miner
+		if (MinerType.pool.equals(this.type)) {
+			String decode = Utility.base58_decode(this.publicKey);
+			if (decode.length() != 64) {
+				System.err.println("ERROR: Invalid Arionum address!");
+				System.exit(1);
+			}
+		}
+		// end commit e14b696362fb
+		
 		active = true;
 		final long wallClockBegin = System.currentTimeMillis();
 		this.lastUpdate = wallClockBegin;
@@ -514,6 +525,14 @@ public class Miner {
 	
 	private void startTest() {
 		System.out.println("Static tests using " + this.maxHashers + " iterations as cap");
+		
+		System.out.println("Utility Test on " + this.publicKey);
+		String refKey = this.publicKey;
+		
+		String decode = Utility.base58_decode(refKey);
+		BigInteger decInt = Utility.base58_decodeInt(refKey);
+		System.out.println("  base58_decode: (" + decode.length() + ") " + decode );
+		System.out.println("  base58_decodeInt: " + decInt.toString() + " (" + decInt.doubleValue() + ") ");
 		
 		System.out.println("Done static testing.");
 	}

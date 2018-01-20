@@ -4,7 +4,7 @@
 
 	<groupId>com.programmerdan.arionum</groupId>
 	<artifactId>arionum-miner</artifactId>
-	<version>0.0.4-SNAPSHOT</version>
+	<version>0.0.5-SNAPSHOT</version>
 	<packaging>jar</packaging>
 
 	<name>arionum-miner-java</name>
@@ -91,7 +91,7 @@
 						</goals>
 						<configuration>
 							<tasks> <!-- We copy the .sh files with injection -->
-								<copy todir="./">
+								<copy todir="./" overwrite="true">
 									<fileset dir="src/main/bin">
 										<filename name="*.sh" />
 									</fileset>
@@ -99,7 +99,7 @@
 										<filter token="batchJarName" value="${project.build.finalName}" />
 									</filterset>
 								</copy>
-								<copy todir="./">
+								<copy todir="./" overwrite="true">
 									<fileset dir="src/main/bin">
 										<filename name="*.bat" />
 									</fileset>
