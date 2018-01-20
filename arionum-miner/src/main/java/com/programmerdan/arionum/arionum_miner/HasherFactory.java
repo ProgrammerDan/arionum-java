@@ -27,36 +27,21 @@ OR OTHER DEALINGS IN THE SOFTWARE.
 package com.programmerdan.arionum.arionum_miner;
 
 /**
- * Abstraction layer to allow multiple miner definitions.
- * 
+ * Straightforward factory-esque pattern, tied to optional AdvMod enum.
  * 
  * @author ProgrammerDan (Daniel Boston)
  *
  */
-public abstract class Hasher implements Runnable{
+public class HasherFactory {
 
-	protected Miner parent;
-
-	public abstract void run();
-
-	protected boolean active;
-	protected String id;
-	protected long hashCount;
-
-	public Hasher(Miner parent, String id) {
-		super();
-		this.parent = parent;
-		this.id = id;
-		this.active = false;
-		this.hashCount = 0l;
+	public static Hasher createHasher(AdvMode mode, Miner parent, String id) {
+		switch(mode) {
+		case basic:
+			return new BasicHasher(parent, id);
+		case debug:
+			return new DebugHasher(parent, id);
+		default:
+			return new BasicHasher(parent, id);
+		}
 	}
-
-	public long getHashes() {
-		return this.hashCount;
-	}
-
-	public boolean isActive() {
-		return active;
-	}
-
 }

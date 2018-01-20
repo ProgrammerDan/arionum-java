@@ -26,37 +26,7 @@ OR OTHER DEALINGS IN THE SOFTWARE.
  */
 package com.programmerdan.arionum.arionum_miner;
 
-/**
- * Abstraction layer to allow multiple miner definitions.
- * 
- * 
- * @author ProgrammerDan (Daniel Boston)
- *
- */
-public abstract class Hasher implements Runnable{
-
-	protected Miner parent;
-
-	public abstract void run();
-
-	protected boolean active;
-	protected String id;
-	protected long hashCount;
-
-	public Hasher(Miner parent, String id) {
-		super();
-		this.parent = parent;
-		this.id = id;
-		this.active = false;
-		this.hashCount = 0l;
-	}
-
-	public long getHashes() {
-		return this.hashCount;
-	}
-
-	public boolean isActive() {
-		return active;
-	}
-
+public enum AdvMode {
+	basic,
+	debug
 }

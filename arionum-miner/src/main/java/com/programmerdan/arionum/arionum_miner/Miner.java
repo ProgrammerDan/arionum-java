@@ -95,6 +95,7 @@ public class Miner {
 	/* ==== Now update / init vars ==== */
 	
 	private MinerType type;
+	private AdvMode hasherMode;
 
 	/* Block / Data related */
 	private String node;
@@ -108,6 +109,7 @@ public class Miner {
 	private long lastBlockUpdate;
 	
 	/* Update related */
+	private AtomicLong lastSpeed;
 	private long lastUpdate;
 	private long lastReport; 
 	private int cycles;
@@ -115,6 +117,21 @@ public class Miner {
 	private int failures;
 	private int updates;
 	
+	/* stats on update timing */
+	private final AtomicLong updateTimeAvg;
+	private final AtomicLong updateTimeMax;
+	private final AtomicLong updateTimeMin;
+	private final AtomicLong updateParseTimeAvg;
+	private final AtomicLong updateParseTimeMax;
+	private final AtomicLong updateParseTimeMin;
+	
+	/* stats on submission timing */
+	private final AtomicLong submitTimeAvg;
+	private final AtomicLong submitTimeMax;
+	private final AtomicLong submitTimeMin;
+	private final AtomicLong submitParseTimeAvg;
+	private final AtomicLong submitParseTimeMax;
+	private final AtomicLong submitParseTimeMin;
 
 	public static void main(String[] args) {
 		(new Miner(args)).start();
@@ -122,6 +139,8 @@ public class Miner {
 	
 	public Miner(String[] args) {
 		//TODO: increase
+		this.hasherMode = AdvMode.basic;
+		
 		this.hashers = Executors.newCachedThreadPool();
 		this.updaters = Executors.newSingleThreadExecutor();
 		this.submitters = Executors.newCachedThreadPool();
@@ -132,7 +151,22 @@ public class Miner {
 		this.bestDL = new AtomicLong(Long.MAX_VALUE);
 		this.sessionSubmits = new AtomicLong();
 		this.sessionRejects = new AtomicLong();
+		this.lastSpeed = new AtomicLong(System.currentTimeMillis());
 		
+		this.updateTimeAvg = new AtomicLong();
+		this.updateTimeMax = new AtomicLong(Long.MIN_VALUE);
+		this.updateTimeMin = new AtomicLong(Long.MAX_VALUE);
+		this.updateParseTimeAvg = new AtomicLong();
+		this.updateParseTimeMax = new AtomicLong(Long.MIN_VALUE);
+		this.updateParseTimeMin = new AtomicLong(Long.MAX_VALUE);
+
+		this.submitTimeAvg = new AtomicLong();
+		this.submitTimeMax = new AtomicLong(Long.MIN_VALUE);
+		this.submitTimeMin = new AtomicLong(Long.MAX_VALUE);
+		this.submitParseTimeAvg = new AtomicLong();
+		this.submitParseTimeMax = new AtomicLong(Long.MIN_VALUE);
+		this.submitParseTimeMin = new AtomicLong(Long.MAX_VALUE);
+
 		try {
 			this.type = MinerType.valueOf(args[0]);
 			this.node = args[1].trim();
@@ -140,9 +174,15 @@ public class Miner {
 			if (MinerType.solo.equals(this.type)) {
 				this.privateKey = args[3].trim();
 				this.maxHashers = args.length > 4 ? Integer.parseInt(args[4].trim()) : 1;
+				if (args.length > 5) {
+					this.hasherMode = AdvMode.valueOf(args[5].trim());
+				}
 			} else if (MinerType.pool.equals(this.type)) {
 				this.privateKey = this.publicKey;
 				this.maxHashers = args.length > 3 ? Integer.parseInt(args[3].trim()) : 1;
+				if (args.length > 4) {
+					this.hasherMode = AdvMode.valueOf(args[4].trim());
+				}
 			} else if (MinerType.test.equals(this.type)) { // internal test mode, transient benchmarking.
 				this.maxHashers = args.length > 2 ? Integer.parseInt(args[2].trim()) : 1;
 			}
@@ -153,6 +193,7 @@ public class Miner {
 			System.err.println("  public-key: " + this.publicKey);
 			System.err.println("  private-key: " + this.privateKey);
 			System.err.println("  hasher-count: " + this.maxHashers);
+			System.err.println("  hasher-mode: " + this.hasherMode);
 			System.exit(1);
 		}
 		
@@ -176,6 +217,7 @@ public class Miner {
 		while (active) {
 			Future<Boolean> update = this.updaters.submit(new Callable<Boolean>() {
 				public Boolean call() {
+					long executionTimeTracker = System.currentTimeMillis();
 					try {
 						if (cycles > 0 && (System.currentTimeMillis() - lastUpdate) < (UPDATING_DELAY * .5)) {
 							skips++;
@@ -196,6 +238,13 @@ public class Miner {
 						HttpURLConnection con = (HttpURLConnection) url.openConnection();
 						con.setRequestMethod("GET");
 						
+						// Having some weird cases on certain OSes where apparently the netstack
+						// is by default unbounded timeout, so the single thread executor is
+						// stuck forever waiting for a reply that will never come.
+						// This should address that. 
+						con.setConnectTimeout(1000);
+						con.setReadTimeout(1000);
+						
 						int status = con.getResponseCode();
 						
 						lastUpdate = System.currentTimeMillis();
@@ -204,14 +253,19 @@ public class Miner {
 							System.out.println("Update failure: " + con.getResponseMessage());
 							con.disconnect();
 							failures ++;
+							updateTime(System.currentTimeMillis() - executionTimeTracker);
 							return Boolean.FALSE;
 						}
 
+						long parseTimeTracker = System.currentTimeMillis();
+						
 						JSONObject obj = (JSONObject) (new JSONParser()).parse(new InputStreamReader(con.getInputStream()));
 
 						if (!"ok".equals((String) obj.get("status"))) {
+							System.out.println("Update failure: " + obj.get("status"));
 							con.disconnect();
 							failures++;
+							updateTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
 							return Boolean.FALSE;
 						}
 						
@@ -248,6 +302,8 @@ public class Miner {
 							lastReport = System.currentTimeMillis();
 							System.out.print("MinDL: " + limit + " \n  Total Hashes: " + hashes.get() + "H  Overall Avg Speed: " + avgSpeed(wallClockBegin) + "H/s  Last Reported Speed: " + cummSpeed
 									+ "H/s\n  Updates last " + (sinceLastReport / 1000) + "s: " + updates + " Skipped: " + skips + " Failed: " + failures
+									+ (updates > 0 ? "\n  Updates took avg: " + (updateTimeAvg.getAndSet(0) / (updates+failures)) + "ms  max: " + (updateTimeMax.getAndSet(Long.MIN_VALUE)) + "ms  min: " + (updateTimeMin.getAndSet(Long.MAX_VALUE)) + "ms": "")
+									+ (updates > 0 ? "\n  Parsing updates took avg: " + (updateParseTimeAvg.getAndSet(0) / (updates+failures)) + "ms  max: " + (updateParseTimeMax.getAndSet(Long.MIN_VALUE)) + "ms  min: " + (updateParseTimeMin.getAndSet(Long.MAX_VALUE)) + "ms": "")
 									+ "\n  Time since last block update: " + ((System.currentTimeMillis() - lastBlockUpdate) / 1000) + "s"
 									+ " Best DL so far: " + bestDL.get() + "\n  Total time mining this session: " + ((System.currentTimeMillis() - wallClockBegin)/1000l) + "s");
 							skips = 0;
@@ -257,6 +313,7 @@ public class Miner {
 						}
 						con.disconnect();
 						updates++;
+						updateTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
 						if (endline) System.out.println();
 						return Boolean.TRUE;
 					} catch (IOException | ParseException e) {
@@ -264,6 +321,7 @@ public class Miner {
 						System.out.println("Non-fatal Update failure: " + e.getMessage());
 						//e.printStackTrace(); // TODO hide for release, non-fatal errors
 						failures++;
+						updateTime(System.currentTimeMillis() - executionTimeTracker);
 						return Boolean.FALSE;
 					}
 				}
@@ -286,7 +344,7 @@ public class Miner {
 			}
 			
 			if (this.hasherCount.get() < maxHashers) {
-				this.hashers.submit(new Hasher(this, php_uniqid()));
+				this.hashers.submit(HasherFactory.createHasher(hasherMode, this, php_uniqid()));
 			}
 			
 			try {
@@ -299,8 +357,11 @@ public class Miner {
 			
 			if (cycles == 30) {
 				if (sessionSubmits.get() > 0) {
-					System.out.println("So far, found " + sessionSubmits.get() + " nonces, " + 
-							sessionRejects.get() + " rejected");
+					System.out.println("So far, found " + sessionSubmits.get() + " nonces, " + sessionRejects.get() + " rejected"
+							+ "\n  Submits took avg: " + (submitTimeAvg.get() / (sessionSubmits.get()+sessionRejects.get())) 
+							+ "ms  max: " + (submitTimeMax.get()) + "ms  min: " + (submitTimeMin.get())
+							+ "\n  Parsing submits replies took avg: " + (submitParseTimeAvg.get() / (sessionSubmits.get()+sessionRejects.get())) 
+							+ "ms  max: " + (submitParseTimeMax.get()) + "ms  min: " + (submitParseTimeMin.get()));
 				}
 				cycles = 0;
 			}
@@ -315,9 +376,10 @@ public class Miner {
 	protected void submit(final String nonce, final String argon, final long submitDL) {
 		this.submitters.submit(new Runnable() {
 			public void run() {
+				long executionTimeTracker = System.currentTimeMillis();
+				
 				StringBuilder extra = new StringBuilder(node);
 				extra.append("/mine.php?q=submitNonce");
-				
 				try {
 					URL url = new URL(extra.toString());
 					HttpURLConnection con = (HttpURLConnection) url.openConnection();
@@ -360,8 +422,11 @@ public class Miner {
 						System.out.println("Submit of " + nonce + " failure: " + con.getResponseMessage());
 						con.disconnect();
 						sessionRejects.incrementAndGet();
+						submitTime(System.currentTimeMillis() - executionTimeTracker);
 						return;
 					}
+					
+					long parseTimeTracker = System.currentTimeMillis();
 					
 					JSONObject obj = (JSONObject) (new JSONParser()).parse(new InputStreamReader(con.getInputStream()));
 					// TESTINF: System.out.println(obj.toJSONString());
@@ -375,10 +440,11 @@ public class Miner {
 					//System.out.println("Determination based on reply: " + obj.toJSONString());
 					
 					con.disconnect();
-					
+					submitTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
 				} catch (IOException | ParseException ioe) {
 					System.err.println("Non-fatal but tragic: Failed during construction or receipt of submission: " + ioe.getMessage());
 					//ioe.printStackTrace();
+					submitTime(System.currentTimeMillis() - executionTimeTracker);
 				}
 			}
 		});
@@ -394,11 +460,40 @@ public class Miner {
 	}
 	
 	private String speed() {
-		return String.format("%f", ((double) this.currentHashes.getAndSet(0)) / (((double) (System.currentTimeMillis() - this.lastUpdate)) / 1000d));
+		return String.format("%f", ((double) this.currentHashes.getAndSet(0)) / (((double) (System.currentTimeMillis() - this.lastSpeed.getAndSet(System.currentTimeMillis()))) / 1000d));
 	}
 
 	private String avgSpeed(long clockBegin) {
 		return String.format("%f", this.hashes.doubleValue() / (((double) (System.currentTimeMillis() - clockBegin)) / 1000d));
+	}
+	
+	private void updateTime(long duration) {
+		this.updateTimeAvg.addAndGet(duration);
+		this.updateTimeMax.getAndUpdate( (dl) -> {if (duration > dl) return duration; else return dl;} );
+		this.updateTimeMin.getAndUpdate( (dl) -> {if (duration < dl) return duration; else return dl;} );
+	}
+	
+	private void updateTime(long instance, long total, long parse) {
+		updateTime(instance - total);
+		long duration = instance - parse;
+		
+		this.updateParseTimeAvg.addAndGet(duration);
+		this.updateParseTimeMax.getAndUpdate( (dl) -> {if (duration > dl) return duration; else return dl;} );
+		this.updateParseTimeMin.getAndUpdate( (dl) -> {if (duration < dl) return duration; else return dl;} );
+	}
+	
+	private void submitTime(long duration) {
+		this.submitTimeAvg.addAndGet(duration);
+		this.submitTimeMax.getAndUpdate( (dl) -> {if (duration > dl) return duration; else return dl;} );
+		this.submitTimeMin.getAndUpdate( (dl) -> {if (duration < dl) return duration; else return dl;} );
+	}
+	
+	private void submitTime(long instance, long total, long parse) {
+		submitTime(instance - total);
+		long duration = instance - parse;
+		this.submitParseTimeAvg.addAndGet(duration);
+		this.submitParseTimeMax.getAndUpdate( (dl) -> {if (duration > dl) return duration; else return dl;} );
+		this.submitParseTimeMin.getAndUpdate( (dl) -> {if (duration < dl) return duration; else return dl;} );		
 	}
 	
 	protected BigInteger getDifficulty() {

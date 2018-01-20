@@ -4,7 +4,7 @@
 
 	<groupId>com.programmerdan.arionum</groupId>
 	<artifactId>arionum-miner</artifactId>
-	<version>0.0.3-SNAPSHOT</version>
+	<version>0.0.4-SNAPSHOT</version>
 	<packaging>jar</packaging>
 
 	<name>arionum-miner-java</name>
@@ -78,6 +78,39 @@
 						</filter>
 					</filters>
 				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-antrun-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>Generate Executions</id>
+						<phase>prepare-package</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<tasks> <!-- We copy the .sh files with injection -->
+								<copy todir="./">
+									<fileset dir="src/main/bin">
+										<filename name="*.sh" />
+									</fileset>
+									<filterset>
+										<filter token="batchJarName" value="${project.build.finalName}" />
+									</filterset>
+								</copy>
+								<copy todir="./">
+									<fileset dir="src/main/bin">
+										<filename name="*.bat" />
+									</fileset>
+									<filterset>
+										<filter token="batchJarName" value="${project.build.finalName}" />
+									</filterset>
+								</copy>
+							</tasks>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>

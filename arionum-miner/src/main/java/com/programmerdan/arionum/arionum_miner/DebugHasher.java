@@ -27,36 +27,22 @@ OR OTHER DEALINGS IN THE SOFTWARE.
 package com.programmerdan.arionum.arionum_miner;
 
 /**
- * Abstraction layer to allow multiple miner definitions.
- * 
+ * The intent for this hasher is deeper self-inspection of running times of various components.
+ * It can be used as a testbed for comparative performance. It is not meant to be used for general use
  * 
  * @author ProgrammerDan (Daniel Boston)
  *
  */
-public abstract class Hasher implements Runnable{
+public class DebugHasher extends Hasher {
 
-	protected Miner parent;
-
-	public abstract void run();
-
-	protected boolean active;
-	protected String id;
-	protected long hashCount;
-
-	public Hasher(Miner parent, String id) {
-		super();
-		this.parent = parent;
-		this.id = id;
-		this.active = false;
-		this.hashCount = 0l;
+	public DebugHasher(Miner parent, String id) {
+		super(parent, id);
 	}
-
-	public long getHashes() {
-		return this.hashCount;
-	}
-
-	public boolean isActive() {
-		return active;
+	
+	
+	@Override
+	public void run() {
+		System.out.println("This hasher not yet implemented.");
 	}
 
 }
