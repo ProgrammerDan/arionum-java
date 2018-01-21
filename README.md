@@ -19,3 +19,18 @@ Send CureCoin donations here: BFDK84Z29zb4caNMArKBZVBXAxGqGMRMfq (get involved h
 Send FoldingCoin donations here: 1HH3SQNf1KPfsAGC5BAvDj849oHoAsYEms (get involved here: https://foldingcoin.net/ -- mergefold w/ curecoin!)
 
 Thanks, this looks to be a super fun project.
+
+---------------
+# Arionum-miner
+
+This is a slightly optimized miner, coded in Java, and based very strongly on the php reference version.
+
+Major differentiators:
+
+* One JVM can run multiple hashers and share the same "update" requests to the pool, reducing traffic to the core
+
+* The hashers never stop -- the reference PHP implementation pauses the hasher during update requests and nonce submissions. The java hashers never stop.
+
+* (Very slight) optimizations -- the Java miner has easy swap support for alternate "core" types, with "basic", "debug" and "experimental" for now; basic is equivalent to php-reference, debug is chatty giving runtime details, and experimental has some improvements to improve the amount of time the hasher spends computing argon2i hashes instead of other things.
+
+I hope you enjoy. See the README.md in the arionum-miner subfolder for details on compiling and running.
