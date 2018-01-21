@@ -388,10 +388,6 @@ public class Miner {
 									+ (updates > 0 ? "\n  Parsing updates took avg: " + (updateParseTimeAvg.getAndSet(0) / (updates+failures)) + "ms  max: " + (updateParseTimeMax.getAndSet(Long.MIN_VALUE)) + "ms  min: " + (updateParseTimeMin.getAndSet(Long.MAX_VALUE)) + "ms": "")
 									+ "\n  Time since last block update: " + ((System.currentTimeMillis() - lastBlockUpdate) / 1000) + "s"
 									+ " Best DL so far: " + bestDL.get() + "\n  Total time mining this session: " + ((System.currentTimeMillis() - wallClockBegin)/1000l) + "s");
-							if (sinceLastReport < 5000000000l) {
-								System.out.println();
-								printWorkerStats(false);
-							}
 							skips = 0;
 							failures = 0;
 							updates = 0;
@@ -401,6 +397,9 @@ public class Miner {
 						updates++;
 						updateTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
 						if (endline) System.out.println();
+						if (sinceLastReport > 15000l && sinceLastReport < 5000000000l) {
+							printWorkerStats();
+						}
 						return Boolean.TRUE;					
 					} catch (IOException | ParseException e) {
 						lastUpdate = System.currentTimeMillis();
@@ -500,7 +499,7 @@ public class Miner {
 		});
 	}
 	
-	private void printWorkerStats(boolean newline) {
+	private void printWorkerStats() {
 		System.out.println(String.format("  %13s %12s %7s %7s %7s %5s %12s", "Worker ID", "Hashes", "H/s", "Argon %", "Shares", "Finds", "Block BestDL"));
 		workerRoundBestDL.forEach((workerId, dl) -> {
 			if (dl.get() < Long.MAX_VALUE) {
@@ -512,11 +511,7 @@ public class Miner {
 					.append(String.format("%7d ", workerBlockShares.get(workerId).get()))
 					.append(String.format("%5d ", workerBlockFinds.get(workerId).get()))
 					.append(String.format("%12d", dl.get()));
-				if (newline) {
 					System.out.println(workerString.toString());
-				} else {
-					System.out.print(workerString.toString());
-				}
 			}
 		});
 	}
