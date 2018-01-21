@@ -85,6 +85,7 @@ public class Miner {
 	private final ConcurrentHashMap<String, Double> workerLastRatio;
 	private final ConcurrentHashMap<String, AtomicLong> workerRateHashes;
 	private final ConcurrentHashMap<String, Double> workerRate;
+	private final ConcurrentHashMap<String, Double> workerAvgRate;
 	
 	/**
 	 * One or more hashing threads.
@@ -164,6 +165,8 @@ public class Miner {
 	private final AtomicLong submitParseTimeMax;
 	private final AtomicLong submitParseTimeMin;
 
+	protected final long wallClockBegin;
+	
 	public static void main(String[] args) {
 		(new Miner(args)).start();
 	}
@@ -197,6 +200,7 @@ public class Miner {
 		this.workerLastRatio = new ConcurrentHashMap<String, Double>();
 		this.workerRateHashes = new ConcurrentHashMap<String, AtomicLong>();
 		this.workerRate = new ConcurrentHashMap<String, Double>();
+		this.workerAvgRate = new ConcurrentHashMap<String, Double>();
 		
 		/*end stats*/
 		
@@ -275,6 +279,7 @@ public class Miner {
 		
 		this.limit = 240; // default
 		this.worker = php_uniqid();
+		this.wallClockBegin = System.currentTimeMillis();
 	}
 	
 	public void start() {
@@ -294,7 +299,6 @@ public class Miner {
 		// end commit e14b696362fb
 		
 		active = true;
-		final long wallClockBegin = System.currentTimeMillis();
 		this.lastUpdate = wallClockBegin;
 		boolean firstRun = true;
 		cycles = 0;
@@ -500,11 +504,13 @@ public class Miner {
 		workerRateHashes.put(workerId, new AtomicLong(0l));
 		workerRoundBestDL.put(workerId,  new AtomicLong(Long.MAX_VALUE));
 		workerRate.put(workerId, 0.0d);
+		workerAvgRate.put(workerId, 0.0d);
 	}
 	
 	protected void refreshFromWorkers() {
 		workers.forEach(this.maxHashers,  (workerId, hasher) -> {
-			workerHashes.get(workerId).set(hasher.getHashes());
+			long allHashes = hasher.getHashes();
+			workerHashes.get(workerId).set(allHashes);
 			long rateHashes = hasher.getHashesRecent();
 			workerRateHashes.get(workerId).set(rateHashes);
 			currentHashes.getAndAdd(rateHashes);
@@ -524,7 +530,11 @@ public class Miner {
 				workerLastRatio.put(workerId, (double) argonTime / ((double) argonTime + nonArgonTime));
 			}
 			
-			workerRate.put(workerId, (double) rateHashes / ((double) ( (argonTime + nonArgonTime) / 1000000000l) ) );
+			long seconds = (argonTime + nonArgonTime) / 1000000000l;
+			
+			workerRate.put(workerId, (double) rateHashes / ((double) seconds) );
+			
+			workerAvgRate.put(workerId, (double) allHashes / ((double) (System.currentTimeMillis() - wallClockBegin) / 1000l) );
 			
 			hasher.clearTimers();
 		});
@@ -550,6 +560,8 @@ public class Miner {
 					workerArgonTime.get(workerId).set(0l);
 					workerNonArgonTime.get(workerId).set(0l);
 					
+					workerAvgRate.put(workerId, (double) hashes / ((double) (System.currentTimeMillis() - wallClockBegin) / 1000l) );
+					
 					// store rate -- clear rate hashes
 					workerRate.put(workerId, (double) rateHashes / ((double) ( (argonTime + nonArgonTime) / 1000000000l) ) );
 					workerRateHashes.get(workerId).set(0l);
@@ -559,12 +571,13 @@ public class Miner {
 	}
 	
 	private void printWorkerStats() {
-		System.out.println(String.format("  %13s %12s %7s %7s %7s %5s %12s", "Worker ID", "Hashes", "H/s", "Argon %", "Shares", "Finds", "Block BestDL"));
+		System.out.println(String.format("  %13s %12s %7s %7s %7s %7s %5s %12s", "Worker ID", "Hashes", "Avg H/s", "Cur H/s", "Argon %", "Shares", "Finds", "Block BestDL"));
 		workerRoundBestDL.forEach((workerId, dl) -> {
 			if (dl.get() < Long.MAX_VALUE) {
 				StringBuilder workerString = new StringBuilder(69);
 				workerString.append("  ").append(workerId).append(" ")
 					.append(String.format("%12d ", workerHashes.get(workerId).get()))
+					.append(String.format("%7.2f ", workerAvgRate.get(workerId)))
 					.append(String.format("%7.2f ", workerRate.get(workerId)))
 					.append(String.format("%7.3f ", workerLastRatio.get(workerId) * 100d))
 					.append(String.format("%7d ", workerBlockShares.get(workerId).get()))
@@ -662,11 +675,11 @@ public class Miner {
 	}
 	
 	private String speed() {
-		return String.format("%f", ((double) this.currentHashes.getAndSet(0)) / (((double) (System.currentTimeMillis() - this.lastSpeed.getAndSet(System.currentTimeMillis()))) / 1000d));
+		return String.format("%12.4f", ((double) this.currentHashes.getAndSet(0)) / (((double) (System.currentTimeMillis() - this.lastSpeed.getAndSet(System.currentTimeMillis()))) / 1000d));
 	}
 
 	private String avgSpeed(long clockBegin) {
-		return String.format("%f", this.hashes.doubleValue() / (((double) (System.currentTimeMillis() - clockBegin)) / 1000d));
+		return String.format("%12.4f", this.hashes.doubleValue() / (((double) (System.currentTimeMillis() - clockBegin)) / 1000d));
 	}
 	
 	private void updateTime(long duration) {
