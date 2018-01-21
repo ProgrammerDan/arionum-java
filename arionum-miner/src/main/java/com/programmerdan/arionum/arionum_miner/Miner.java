@@ -171,7 +171,6 @@ public class Miner {
 		//TODO: increase
 		this.hasherMode = AdvMode.basic;
 		
-		this.hashers = Executors.newCachedThreadPool();
 		this.updaters = Executors.newSingleThreadExecutor();
 		this.submitters = Executors.newCachedThreadPool();
 		this.hasherCount = new AtomicInteger();
@@ -266,6 +265,11 @@ public class Miner {
 					
 			System.exit(1);
 		}
+		
+		System.out.println("You have " + Runtime.getRuntime().availableProcessors() + " processors vs. " + this.maxHashers + " hashers. ");
+		
+
+		this.hashers = Executors.newFixedThreadPool(this.maxHashers, Executors.privilegedThreadFactory());
 		
 		this.limit = 240; // default
 		this.worker = php_uniqid();
