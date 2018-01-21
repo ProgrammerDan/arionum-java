@@ -83,7 +83,7 @@ Differences:
 ---------------------
 ### TODO
 
-* ~~Add address checking as here: https://github.com/arionum/miner/commit/e14b696362fb79d60c4ff8bc651185740b8021d9 ~~ Done in commit dd5388c
+* ~~Add address checking as here: https://github.com/arionum/miner/commit/e14b696362fb79d60c4ff8bc651185740b8021d9~~ Done in commit dd5388c
 
 * Colored screen output to better see labels / stats and keep track of hashers
 
