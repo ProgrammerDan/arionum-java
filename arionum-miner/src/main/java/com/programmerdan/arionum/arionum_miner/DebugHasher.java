@@ -85,6 +85,7 @@ public class DebugHasher extends Hasher {
 			active = false;
 		}
 		if (active) {
+			parent.workerInit(id);
 			System.out.println(id + "] Spun up DEBUG hashing worker in " + (System.currentTimeMillis() - start) + "ms");
 		}
 		
@@ -101,7 +102,14 @@ public class DebugHasher extends Hasher {
 		long duration2Comp = 0l;
 		long statsUpd = 0l;
 		
+		
+		long statBegin = 0l;
+		long statArgonBegin = 0l;
+		long statArgonEnd = 0l;
+		long statEnd = 0l;
+		
 		while (active) {
+			statBegin = System.nanoTime();
 			try {
 				long tracking = System.currentTimeMillis();
 				
@@ -127,7 +135,7 @@ public class DebugHasher extends Hasher {
 				tracking = System.currentTimeMillis();
 				
 				// prealloc probably saves us 10% on this op sequence
-				hashBase = new StringBuilder(238 + parent.getBlockData().length()); // size of key + none + difficult + argon + data + spacers
+				hashBase = new StringBuilder(280 + parent.getBlockData().length()); // size of key + none + difficult + argon + data + spacers
 				hashBase.append(parent.getPublicKey()).append("-");
 				hashBase.append(nonceSb).append("-");
 				hashBase.append(parent.getBlockData()).append("-");
@@ -135,13 +143,22 @@ public class DebugHasher extends Hasher {
 				preArgon += System.currentTimeMillis() - tracking;
 				tracking = System.currentTimeMillis();
 				
+				/*if (count > 0 && (count % 100) == 0) {
+					System.out.println(" pre-argon length vs. prelength: " + hashBase.length() + " vs " + hashBase.capacity());
+				}*/
+				statArgonBegin = System.nanoTime();
 				argon = argon2.hash(4, 16384, 4, hashBase.toString());
+				statArgonEnd = System.nanoTime();
 				
 				argonHash += System.currentTimeMillis() - tracking;
 				tracking = System.currentTimeMillis();
 				
 				hashBase.append(argon);
 
+				/*if (count > 0 && (count % 100) == 0) {
+					System.out.println(" post-argon length vs. prelength: " + hashBase.length() + " vs " + hashBase.capacity());
+				}*/
+				
 				postArgon += System.currentTimeMillis() - tracking;
 				tracking = System.currentTimeMillis();
 				
@@ -155,50 +172,31 @@ public class DebugHasher extends Hasher {
 				shaHash += System.currentTimeMillis() - tracking;
 				tracking = System.currentTimeMillis();
 				
-				// see https://stackoverflow.com/a/33085670
-				hashedHash = new StringBuilder(); // TODO: Timing tests.
-				// for (int j = 0; j < byteBase.length; j++) {
-				// hashedHash.append(Integer.toString((byteBase[j] & 0xff) +
-				// 0x100, 16).substring(1));
-				// }
-				// or see https://stackoverflow.com/a/19722967
-				BigInteger bi = new BigInteger(1, byteBase);
-				hashedHash.append(String.format("%0" + (byteBase.length << 1) + "x", bi));
-
-				StringBuilder duration = new StringBuilder(24);
-				duration.append(hexdec_equiv(hashedHash, 10)).append(hexdec_equiv(hashedHash, 15))
-						.append(hexdec_equiv(hashedHash, 20)).append(hexdec_equiv(hashedHash, 23))
-						.append(hexdec_equiv(hashedHash, 31)).append(hexdec_equiv(hashedHash, 40))
-						.append(hexdec_equiv(hashedHash, 45)).append(hexdec_equiv(hashedHash, 55));
-
 				durationMap += System.currentTimeMillis() - tracking;
 				tracking = System.currentTimeMillis();
 
-				StringBuilder duration2 = new StringBuilder(24);
-				duration2.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
+				StringBuilder duration = new StringBuilder(25);
+				duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
 						.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
 						.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
 				
 				duration2Map += System.currentTimeMillis() - tracking;
 				tracking = System.currentTimeMillis();
 				
-				try {
-					assert duration.toString().equals(duration2.toString());
-				} catch (AssertionError ae) {
-					System.err.println(" ASSERT failed: " + duration.toString() + " != " + duration2.toString());
-					ae.printStackTrace();
-					System.exit(1);
-				}
-				
+				/*if (count > 0 && (count % 100) == 0) {
+					System.out.println(" duration length vs. prelength: " + duration.length() + " vs " + (duration.capacity()));
+				}*/
+			
 				// TODO: Bypass double ended conversion; no reason to go from
 				// binary to hex to dec; go straight from bin to dec for max
 				// eff.
 
-				long finalDuration = new BigInteger(duration.toString()).divide(difficulty).longValue();
+				BigInteger bigDuration = new BigInteger(duration.toString());
 				
 				durationComp += System.currentTimeMillis() - tracking;
 				tracking = System.currentTimeMillis();
 
+				long finalDuration = bigDuration.divide(difficulty).longValue();
 				
 				duration2Comp += System.currentTimeMillis() - tracking;
 				tracking = System.currentTimeMillis();
@@ -214,6 +212,8 @@ public class DebugHasher extends Hasher {
 				hashCount++;
 				parent.hashes.incrementAndGet();
 				parent.currentHashes.incrementAndGet();
+				statEnd = System.nanoTime();
+				parent.workerHash(this.id, finalDuration, statArgonEnd - statArgonBegin, (statArgonBegin - statBegin) + (statEnd - statArgonEnd));
 				
 				statsUpd += System.currentTimeMillis() - tracking;
 				tracking = System.currentTimeMillis();

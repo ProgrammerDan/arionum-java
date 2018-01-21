@@ -84,10 +84,17 @@ public class ExperimentalHasher extends Hasher {
 			active = false;
 		}
 		if (active) {
-			System.out.println(id + "] Spun up DEBUG hashing worker in " + (System.currentTimeMillis() - start) + "ms");
+			parent.workerInit(id);
+			System.out.println(id + "] Spun up EXPERIMENTAL hashing worker in " + (System.currentTimeMillis() - start) + "ms");
 		}
 		
+		long statBegin = 0l;
+		long statArgonBegin = 0l;
+		long statArgonEnd = 0l;
+		long statEnd = 0l;
+		
 		while (active) {
+			statBegin = System.nanoTime();
 			try {
 				BigInteger difficulty = parent.getDifficulty();
 
@@ -104,12 +111,14 @@ public class ExperimentalHasher extends Hasher {
 				}
 				
 				// prealloc probably saves us 10% on this op sequence
-				hashBase = new StringBuilder(238 + parent.getBlockData().length()); // size of key + none + difficult + argon + data + spacers
+				hashBase = new StringBuilder(280 + parent.getBlockData().length()); // size of key + none + difficult + argon + data + spacers
 				hashBase.append(parent.getPublicKey()).append("-");
 				hashBase.append(nonceSb).append("-");
 				hashBase.append(parent.getBlockData()).append("-");
 				hashBase.append(difficulty);
+				statArgonBegin = System.nanoTime();
 				argon = argon2.hash(4, 16384, 4, hashBase.toString());
+				statArgonEnd = System.nanoTime();
 				hashBase.append(argon);
 
 				base = hashBase.toString();
@@ -119,7 +128,7 @@ public class ExperimentalHasher extends Hasher {
 				}
 				byteBase = sha512.digest(byteBase);
 
-				StringBuilder duration = new StringBuilder(24);
+				StringBuilder duration = new StringBuilder(25);
 				duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
 						.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
 						.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
@@ -134,7 +143,8 @@ public class ExperimentalHasher extends Hasher {
 				hashCount++;
 				parent.hashes.incrementAndGet();
 				parent.currentHashes.incrementAndGet();
-				
+				statEnd = System.nanoTime();
+				parent.workerHash(this.id, finalDuration, statArgonEnd - statArgonBegin, (statArgonBegin - statBegin) + (statEnd - statArgonEnd));
 			} catch (Exception e) {
 				System.err.println(id + "] This worker failed somehow. Killing it.");
 				e.printStackTrace();

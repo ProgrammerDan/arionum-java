@@ -31,12 +31,14 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.math.BigInteger;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Base64.Encoder;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -60,7 +62,30 @@ public class Miner {
 	 * Non-main thread group that handles submitting nonces.
 	 */
 	private final ExecutorService submitters;
-
+	
+	/**
+	 * Non-main thread group that handles worker statistics, if active.
+	 */
+	private final ExecutorService statistics;
+	private final ConcurrentHashMap<String, AtomicLong> workerHashes;
+	private final ConcurrentHashMap<String, AtomicLong> workerBlockShares;
+	private final ConcurrentHashMap<String, AtomicLong> workerBlockFinds;
+	private final ConcurrentHashMap<String, AtomicLong> workerRoundBestDL;
+	/**
+	 * Clear this every 100 hashes and dump into the avg record 
+	 */
+	private final ConcurrentHashMap<String, AtomicLong> workerArgonTime;
+	/**
+	 * Clear this every 100 hashes and dump into the avg record
+	 */
+	private final ConcurrentHashMap<String, AtomicLong> workerNonArgonTime;
+	/**
+	 * Computed argon vs nonargon ratio -- ideal is more time spent doing argon hashes, less other things!
+	 */
+	private final ConcurrentHashMap<String, Double> workerLastRatio;
+	private final ConcurrentHashMap<String, AtomicLong> workerRateHashes;
+	private final ConcurrentHashMap<String, Double> workerRate;
+	
 	/**
 	 * One or more hashing threads.
 	 */
@@ -94,6 +119,8 @@ public class Miner {
 	private final ExecutorService updaters;
 	
 	protected boolean active = false;
+	
+	protected boolean colors = false;
 	
 	/* ==== Now update / init vars ==== */
 	
@@ -148,6 +175,29 @@ public class Miner {
 		this.updaters = Executors.newSingleThreadExecutor();
 		this.submitters = Executors.newCachedThreadPool();
 		this.hasherCount = new AtomicInteger();
+	
+		/*stats*/
+		this.statistics = Executors.newCachedThreadPool();
+		this.workerHashes = new ConcurrentHashMap<String, AtomicLong>();
+		this.workerBlockShares = new ConcurrentHashMap<String, AtomicLong>();
+		this.workerBlockFinds = new ConcurrentHashMap<String, AtomicLong>();
+		this.workerRoundBestDL = new ConcurrentHashMap<String, AtomicLong>();
+		/**
+		 * Clear this every 100 hashes and dump into the avg record 
+		 */
+		this.workerArgonTime = new ConcurrentHashMap<String, AtomicLong>();
+		/**
+		 * Clear this every 100 hashes and dump into the avg record
+		 */
+		this.workerNonArgonTime = new ConcurrentHashMap<String, AtomicLong>();
+		/**
+		 * Computed argon vs nonargon ratio -- ideal is more time spent doing argon hashes, less other things!
+		 */
+		this.workerLastRatio = new ConcurrentHashMap<String, Double>();
+		this.workerRateHashes = new ConcurrentHashMap<String, AtomicLong>();
+		this.workerRate = new ConcurrentHashMap<String, Double>();
+		
+		/*end stats*/
 		
 		this.hashes = new AtomicLong();
 		this.currentHashes = new AtomicLong();
@@ -180,12 +230,19 @@ public class Miner {
 				if (args.length > 5) {
 					this.hasherMode = AdvMode.valueOf(args[5].trim());
 				}
+				if (args.length > 6) {
+					this.colors = Boolean.parseBoolean(args[6].trim());
+				}
 			} else if (MinerType.pool.equals(this.type)) {
 				this.privateKey = this.publicKey;
 				this.maxHashers = args.length > 3 ? Integer.parseInt(args[3].trim()) : 1;
 				if (args.length > 4) {
 					this.hasherMode = AdvMode.valueOf(args[4].trim());
 				}
+				if (args.length > 5) {
+					this.colors = Boolean.parseBoolean(args[5].trim());
+				}
+
 			} else if (MinerType.test.equals(this.type)) { // internal test mode, transient benchmarking.
 				this.maxHashers = args.length > 3 ? Integer.parseInt(args[3].trim()) : 1;
 			}
@@ -197,6 +254,16 @@ public class Miner {
 			System.err.println("  private-key: " + this.privateKey);
 			System.err.println("  hasher-count: " + this.maxHashers);
 			System.err.println("  hasher-mode: " + this.hasherMode);
+			System.err.println("  colors: " + this.colors);
+			System.err.println();
+			System.err.println("Usage: ");
+			System.err.println("  java -jar arionum-miner.jar pool http://aropool.com address [#hashers] [basic|debug|experimental] [true|false]");
+			System.err.println("  java -jar arionum-miner.jar solo node-address pubKey priKey [#hashers] [basic|debug|experimental] [true|false]");
+			System.err.println(" where:");
+			System.err.println("   [#hashers] is # of hashers to spin up. Default 1.");
+			System.err.println("   [basic|debug|experimental] is type of hasher to run -- basic is always stable, debug is chatty, and experimental has no guarantees but is usually faster. Default basic.");
+			System.err.println("   [true|false] is if colored output is enabled -- does not work on Windows systems unless in Cygwin bash shell. Default false.");
+					
 			System.exit(1);
 		}
 		
@@ -291,6 +358,7 @@ public class Miner {
 							data = localData;
 							lastBlockUpdate = System.currentTimeMillis();
 							System.out.print("Best DL on last block: " + bestDL.getAndSet(Long.MAX_VALUE) + " ");
+							workerRoundBestDL.forEachValue(2, (dl) -> {dl.set(Long.MAX_VALUE);}); // reset best DL 
 							endline = true;
 						}
 						BigInteger localDifficulty = new BigInteger((String) jsonData.get("difficulty"));
@@ -320,6 +388,10 @@ public class Miner {
 									+ (updates > 0 ? "\n  Parsing updates took avg: " + (updateParseTimeAvg.getAndSet(0) / (updates+failures)) + "ms  max: " + (updateParseTimeMax.getAndSet(Long.MIN_VALUE)) + "ms  min: " + (updateParseTimeMin.getAndSet(Long.MAX_VALUE)) + "ms": "")
 									+ "\n  Time since last block update: " + ((System.currentTimeMillis() - lastBlockUpdate) / 1000) + "s"
 									+ " Best DL so far: " + bestDL.get() + "\n  Total time mining this session: " + ((System.currentTimeMillis() - wallClockBegin)/1000l) + "s");
+							if (sinceLastReport < 5000000000l) {
+								System.out.println();
+								printWorkerStats(false);
+							}
 							skips = 0;
 							failures = 0;
 							updates = 0;
@@ -329,11 +401,12 @@ public class Miner {
 						updates++;
 						updateTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
 						if (endline) System.out.println();
-						return Boolean.TRUE;
+						return Boolean.TRUE;					
 					} catch (IOException | ParseException e) {
 						lastUpdate = System.currentTimeMillis();
-						System.out.println("Non-fatal Update failure: " + e.getMessage());
-						//e.printStackTrace(); // TODO hide for release, non-fatal errors
+						if (!(e instanceof SocketTimeoutException)) {
+							System.out.println("Non-fatal Update failure: " + e.getMessage());
+						}
 						failures++;
 						updateTime(System.currentTimeMillis() - executionTimeTracker);
 						return Boolean.FALSE;
@@ -350,7 +423,7 @@ public class Miner {
 					System.err.println("Unable to successfully complete first update: " + e.getMessage());
 				} finally {
 					if (firstRun) { // failure!
-						System.out.println("Unable to contact node in pool, failing.");
+						System.out.println("Unable to contact node in pool, please try again in a moment.");
 						active = false;
 						break;
 					}
@@ -385,6 +458,67 @@ public class Miner {
 		this.updaters.shutdown();
 		this.hashers.shutdown();
 		this.submitters.shutdown();
+	}
+
+	protected void workerInit(final String workerId) {
+		workerHashes.put(workerId, new AtomicLong(0l));
+		workerBlockShares.put(workerId, new AtomicLong(0l));
+		workerBlockFinds.put(workerId, new AtomicLong(0l));
+		workerArgonTime.put(workerId, new AtomicLong(0l));
+		workerNonArgonTime.put(workerId, new AtomicLong(0l));
+		workerLastRatio.put(workerId, 0.0d);
+		workerRateHashes.put(workerId, new AtomicLong(0l));
+		workerRoundBestDL.put(workerId,  new AtomicLong(Long.MAX_VALUE));
+		workerRate.put(workerId, 0.0d);
+	}
+	
+	protected void workerHash(final String workerId, final long DL, final long argon, final long nonArgon) {
+		this.statistics.submit(new Runnable() {
+			public void run() {
+				long hashes = workerHashes.get(workerId).incrementAndGet();
+				long rateHashes = workerRateHashes.get(workerId).incrementAndGet();
+				
+				if (DL < 240) {// BLOCK
+					workerBlockFinds.get(workerId).incrementAndGet();
+				} else if (DL < limit) { // share
+					workerBlockShares.get(workerId).incrementAndGet();
+				}
+				workerRoundBestDL.get(workerId).getAndUpdate( (dl) -> {if (DL < dl) return DL; else return dl;} );
+				
+				long argonTime = workerArgonTime.get(workerId).addAndGet(argon);
+				long nonArgonTime = workerNonArgonTime.get(workerId).addAndGet(nonArgon);
+				if (hashes > 0 && hashes % 100 == 0) {
+					workerLastRatio.put(workerId, (double) argonTime / ((double) argonTime + nonArgonTime));
+					workerArgonTime.get(workerId).set(0l);
+					workerNonArgonTime.get(workerId).set(0l);
+					
+					// store rate -- clear rate hashes
+					workerRate.put(workerId, (double) rateHashes / ((double) ( (argonTime + nonArgonTime) / 1000000000l) ) );
+					workerRateHashes.get(workerId).set(0l);
+				}
+			}
+		});
+	}
+	
+	private void printWorkerStats(boolean newline) {
+		System.out.println(String.format("  %13s %12s %7s %7s %7s %5s %12s", "Worker ID", "Hashes", "H/s", "Argon %", "Shares", "Finds", "Block BestDL"));
+		workerRoundBestDL.forEach((workerId, dl) -> {
+			if (dl.get() < Long.MAX_VALUE) {
+				StringBuilder workerString = new StringBuilder(69);
+				workerString.append("  ").append(workerId).append(" ")
+					.append(String.format("%12d ", workerHashes.get(workerId).get()))
+					.append(String.format("%7.2f ", workerRate.get(workerId)))
+					.append(String.format("%7.3f ", workerLastRatio.get(workerId) * 100d))
+					.append(String.format("%7d ", workerBlockShares.get(workerId).get()))
+					.append(String.format("%5d ", workerBlockFinds.get(workerId).get()))
+					.append(String.format("%12d", dl.get()));
+				if (newline) {
+					System.out.println(workerString.toString());
+				} else {
+					System.out.print(workerString.toString());
+				}
+			}
+		});
 	}
 	
 	protected void submit(final String nonce, final String argon, final long submitDL) {

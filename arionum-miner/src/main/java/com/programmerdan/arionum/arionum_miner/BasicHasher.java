@@ -71,10 +71,17 @@ public class BasicHasher extends Hasher {
 			active = false;
 		}
 		if (active) {
-			System.out.println(id + "] Spun up hashing worker in " + (System.currentTimeMillis() - start) + "ms");
+			parent.workerInit(id);
+			System.out.println(id + "] Spun up php-parity hashing worker in " + (System.currentTimeMillis() - start) + "ms");
 		}
 		
+		long statBegin = 0l;
+		long statArgonBegin = 0l;
+		long statArgonEnd = 0l;
+		long statEnd = 0l;
+		
 		while (active) {
+			statBegin = System.nanoTime();
 			try {
 				BigInteger difficulty = parent.getDifficulty();
 
@@ -86,7 +93,9 @@ public class BasicHasher extends Hasher {
 				hashBase.append(encNonce).append("-");
 				hashBase.append(parent.getBlockData()).append("-");
 				hashBase.append(difficulty);
+				statArgonBegin = System.nanoTime();
 				argon = argon2.hash(4, 16384, 4, hashBase.toString());
+				statArgonEnd = System.nanoTime();
 				hashBase.append(argon);
 
 				base = hashBase.toString();
@@ -126,7 +135,8 @@ public class BasicHasher extends Hasher {
 				hashCount++;
 				parent.hashes.incrementAndGet();
 				parent.currentHashes.incrementAndGet();
-				
+				statEnd = System.nanoTime();
+				parent.workerHash(this.id, finalDuration, statArgonEnd - statArgonBegin, (statArgonBegin - statBegin) + (statEnd - statArgonEnd));
 			} catch (Exception e) {
 				System.err.println(id + "] This worker failed somehow. Killing it.");
 				e.printStackTrace();
