@@ -69,10 +69,9 @@ public class Miner {
 	 */
 	private final ExecutorService submitters;
 	
-	/**
-	 * Non-main thread group that handles worker statistics, if active.
+	/*
+	 * Worker statistics
 	 */
-	private final ExecutorService statistics;
 	private final ConcurrentHashMap<String, AtomicLong> workerHashes;
 	private final ConcurrentHashMap<String, AtomicLong> workerBlockShares;
 	private final ConcurrentHashMap<String, AtomicLong> workerBlockFinds;
@@ -197,7 +196,6 @@ public class Miner {
 		this.workers = new ConcurrentHashMap<String, Hasher>();
 	
 		/*stats*/
-		this.statistics = Executors.newCachedThreadPool();
 		this.workerHashes = new ConcurrentHashMap<String, AtomicLong>();
 		this.workerBlockShares = new ConcurrentHashMap<String, AtomicLong>();
 		this.workerBlockFinds = new ConcurrentHashMap<String, AtomicLong>();
@@ -286,7 +284,7 @@ public class Miner {
 			System.err.println("  java -jar arionum-miner.jar solo node-address pubKey priKey [#hashers] [basic|debug|experimental] [true|false]");
 			System.err.println(" where:");
 			System.err.println("   [#hashers] is # of hashers to spin up. Default 1.");
-			System.err.println("   [basic|debug|experimental] is type of hasher to run -- basic is always stable, debug is chatty, and experimental has no guarantees but is usually faster. Default basic.");
+			System.err.println("   [stable|basic|debug|experimental] is type of hasher to run -- stable is always stable, basic is php ref, debug is chatty, and experimental has no guarantees but is usually faster. Default stable.");
 			System.err.println("   [true|false] is if colored output is enabled -- does not work on Windows systems unless in Cygwin bash shell. Default false.");
 					
 			System.exit(1);
@@ -413,7 +411,7 @@ public class Miner {
 							updateWorkers();
 						}
 						long sinceLastReport = System.currentTimeMillis() - lastReport;
-						if (sinceLastReport > 15000l) {//localLimit != limit || cycles == 3 || cycles == 18) {
+						if (sinceLastReport > 15000l) {
 							lastReport = System.currentTimeMillis();
 							System.out.print("MinDL: " + limit + " \n  Total Hashes: " + hashes.get() + "H  Overall Avg Speed: " + avgSpeed(wallClockBegin) + "H/s  Last Reported Speed: " + cummSpeed
 									+ "H/s\n  Updates last " + (sinceLastReport / 1000) + "s: " + updates + " Skipped: " + skips + " Failed: " + failures
@@ -435,7 +433,7 @@ public class Miner {
 						if (sinceLastReport > 15000l && sinceLastReport < 5000000000l) {
 							printWorkerStats();
 						}
-						//System.out.println();
+
 						return Boolean.TRUE;					
 					} catch (IOException | ParseException e) {
 						lastUpdate = System.currentTimeMillis();

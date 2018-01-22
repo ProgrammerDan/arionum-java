@@ -40,6 +40,23 @@ import de.mkammerer.argon2.Argon2Factory.Argon2Types;
 /**
  * The intent for this hasher is deeper self-inspection of running times of various components.
  * It can be used as a testbed for comparative performance. It is not meant to be used for general use
+ *
+ * This particular experimental hasher takes advantage of an observation: namely, that 
+ * we're doing double the randomness minimally necessary for the scheme, since the argon2i 
+ * implementation here and in the php reference internally salts the "password" with 32 bytes of
+ * random data. So the nonce itself can be considered just a payload, fixed entity, and allow the
+ * salting of the argon2i to control uniformly random generation of SHA-512 DL outcomes.
+ * 
+ * This gives me 5-10% H/s speedups on isolated testing with no increase in rejections. Block
+ * finds and shares remain as expected for H/s observed. 
+ * 
+ * Another indicator of improved performance is tracking reveals 99.97% of time is spent in argon2i 
+ * codepath, vs. between 99.8 and 99.9% for other cores. This might sound small but adds up in a big way
+ * over time, as its a per-hash improvement.
+ * 
+ * Once a nonce is submitted, it is discarded and a new one generated, as the pool does not allow 
+ * resubmission of prior nonces.
+ * 
  * 
  * @author ProgrammerDan (Daniel Boston)
  *
@@ -63,6 +80,8 @@ public class ExperimentalHasher extends Hasher {
 		genNonce();
 	}
 	
+	/**
+	 */
 	private void genNonce() {
 		String encNonce = null;
 		StringBuilder hashBase;
@@ -88,7 +107,6 @@ public class ExperimentalHasher extends Hasher {
 		
 		rawNonce = nonceSb.toString();
 		rawHashBase = hashBase.toString();
-		System.out.println("new nonce: " + rawNonce);
 	}
 	
 	
@@ -166,7 +184,7 @@ public class ExperimentalHasher extends Hasher {
 					stuck = 0;
 				} else {
 					stuck++;
-					if (priorHashesRecent > 0 && stuck > priorHashesRecent * 30) {
+					if (priorHashesRecent > 0 && stuck > priorHashesRecent * 15) {
 						genNonce();
 						stuck = 0;
 					}
