@@ -14,9 +14,14 @@ For pool-based mining, full command line flags:
 **# hashers**: A number greater then 0 indicating how many hashers to run within this single miner instance. Be warned, more hashers does not always lead to higher Hr/s -- experiment with this value to find the best for your system.
 
 **hasher core**: Currently, one of:
+
     `basic`: a core that is line for line basically the same as the php-miner's hasher
+
     `debug`: a core that shows runtimes of various subcomponents of the hashers as they run. Very chatty. Not for long term use.
-    `experimental`: Stable, but drifting from php-parity. This hasher tries to squeeze even more performance out of your CPU cores.
+
+    `stable`: Stable, but drifting from php-parity. This hasher tries to squeeze even more performance out of your CPU cores. Current Default.
+
+    `experimental`:  Bleeding edge. Might be faster, might have tradeoffs, no warrantees.
 
 **colored output**: Only supported in linux, set to true to add some color to the output of the statistic updates.
 
@@ -42,7 +47,9 @@ For solo mining, full command line flags:
 
     `debug`: a core that shows runtimes of various subcomponents of the hashers as they run. Very chatty. Not for long term use.
 
-    `experimental`: Stable, but drifting from php-parity. This hasher tries to squeeze even more performance out of your CPU cores.
+    `stable`: Stable, but drifting from php-parity. This hasher tries to squeeze even more performance out of your CPU cores. Current Default.
+
+    `experimental`:  Bleeding edge. Might be faster, might have tradeoffs, no warrantees.
 
 **colored output**: Only supported in linux, set to true to add some color to the output of the statistic updates.
 

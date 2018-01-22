@@ -75,24 +75,25 @@ public class BasicHasher extends Hasher {
 			System.out.println(id + "] Spun up php-parity hashing worker in " + (System.currentTimeMillis() - start) + "ms");
 		}
 		
+		long statCycle = 0l;
 		long statBegin = 0l;
 		long statArgonBegin = 0l;
 		long statArgonEnd = 0l;
 		long statEnd = 0l;
 		
 		while (active) {
+			
+			statCycle = System.currentTimeMillis();
 			statBegin = System.nanoTime();
 			try {
-				BigInteger difficulty = parent.getDifficulty();
-
 				random.nextBytes(nonce);
 				encNonce = Base64.getEncoder().encodeToString(nonce);
 				encNonce = encNonce.replaceAll("[^a-zA-Z0-9]", ""); // TODO: static test vs other impls
 				hashBase = new StringBuilder();
-				hashBase.append(parent.getPublicKey()).append("-");
+				hashBase.append(this.publicKey).append("-");
 				hashBase.append(encNonce).append("-");
-				hashBase.append(parent.getBlockData()).append("-");
-				hashBase.append(difficulty);
+				hashBase.append(this.data).append("-");
+				hashBase.append(this.difficultyString);
 				statArgonBegin = System.nanoTime();
 				argon = argon2.hash(4, 16384, 4, hashBase.toString());
 				statArgonEnd = System.nanoTime();
@@ -124,24 +125,37 @@ public class BasicHasher extends Hasher {
 				// binary to hex to dec; go straight from bin to dec for max
 				// eff.
 
-				long finalDuration = new BigInteger(duration.toString()).divide(difficulty).longValue();
-				if (finalDuration > 0 && finalDuration <= parent.getLimit()) {
-
+				long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
+				if (finalDuration > 0 && finalDuration <= this.limit) {
 					parent.submit(encNonce, argon, finalDuration);
+					if (finalDuration < 240) {
+						finds++;
+					} else {
+						shares++;
+					}
 				}
 				
-				parent.bestDL.getAndUpdate( (dl) -> {if (finalDuration < dl) return finalDuration; else return dl;} );
+				//parent.bestDL.getAndUpdate( (dl) -> {if (finalDuration < dl) return finalDuration; else return dl;} );
 				
 				hashCount++;
-				parent.hashes.incrementAndGet();
-				parent.currentHashes.incrementAndGet();
+				hashesRecent++;
+				//parent.hashes.incrementAndGet();
+				//parent.currentHashes.incrementAndGet();
 				statEnd = System.nanoTime();
-				parent.workerHash(this.id, finalDuration, statArgonEnd - statArgonBegin, (statArgonBegin - statBegin) + (statEnd - statArgonEnd));
+				//parent.workerHash(this.id, finalDuration, statArgonEnd - statArgonBegin, (statArgonBegin - statBegin) + (statEnd - statArgonEnd));
+				
+				if (finalDuration < this.bestDL) {
+					this.bestDL = finalDuration;
+				}
+				this.argonTime += statArgonEnd - statArgonBegin;
+				this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
+				
 			} catch (Exception e) {
 				System.err.println(id + "] This worker failed somehow. Killing it.");
 				e.printStackTrace();
 				active = false;
 			}
+			this.loopTime += System.currentTimeMillis() - statCycle;
 		}
 		System.out.println(id + "] This worker is now inactive.");
 		this.parent.hasherCount.decrementAndGet();

@@ -44,9 +44,9 @@ import de.mkammerer.argon2.Argon2Factory.Argon2Types;
  * @author ProgrammerDan (Daniel Boston)
  *
  */
-public class ExperimentalHasher extends Hasher {
+public class StableHasher extends Hasher {
 
-	public ExperimentalHasher(Miner parent, String id) {
+	public StableHasher(Miner parent, String id) {
 		super(parent, id);
 	}
 	
@@ -65,7 +65,6 @@ public class ExperimentalHasher extends Hasher {
 		byte[] byteBase = null;
 		String argon = null;
 
-		StringBuilder hashedHash = new StringBuilder();
 		Encoder encoder = Base64.getEncoder();
 		char[] nonceChar = null;
 		StringBuilder nonceSb = null;
@@ -85,19 +84,19 @@ public class ExperimentalHasher extends Hasher {
 		}
 		if (active) {
 			parent.workerInit(id);
-			System.out.println(id + "] Spun up EXPERIMENTAL hashing worker in " + (System.currentTimeMillis() - start) + "ms");
+			System.out.println(id + "] Spun up Stable hashing worker in " + (System.currentTimeMillis() - start) + "ms");
 		}
 		
+		long statCycle = 0l;
 		long statBegin = 0l;
 		long statArgonBegin = 0l;
 		long statArgonEnd = 0l;
 		long statEnd = 0l;
 		
 		while (active) {
+			statCycle = System.currentTimeMillis();
 			statBegin = System.nanoTime();
 			try {
-				BigInteger difficulty = parent.getDifficulty();
-
 				random.nextBytes(nonce);
 				encNonce = encoder.encodeToString(nonce);
 				
@@ -109,13 +108,15 @@ public class ExperimentalHasher extends Hasher {
 						nonceSb.append(ar);
 					}
 				}
-				
+								
 				// prealloc probably saves us 10% on this op sequence
-				hashBase = new StringBuilder(280 + parent.getBlockData().length()); // size of key + none + difficult + argon + data + spacers
-				hashBase.append(parent.getPublicKey()).append("-");
+				// TODO: precompute this length when data is received
+				hashBase = new StringBuilder(hashBufferSize); // size of key + none + difficult + argon + data + spacers
+				hashBase.append(this.publicKey).append("-");
 				hashBase.append(nonceSb).append("-");
-				hashBase.append(parent.getBlockData()).append("-");
-				hashBase.append(difficulty);
+				hashBase.append(this.data).append("-");
+				// TODO: precompute difficulty as string
+				hashBase.append(this.difficultyString);
 				statArgonBegin = System.nanoTime();
 				argon = argon2.hash(4, 16384, 4, hashBase.toString());
 				statArgonEnd = System.nanoTime();
@@ -133,23 +134,31 @@ public class ExperimentalHasher extends Hasher {
 						.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
 						.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
 
-				long finalDuration = new BigInteger(duration.toString()).divide(difficulty).longValue();
-				if (finalDuration > 0 && finalDuration <= parent.getLimit()) {
+				long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
+				if (finalDuration > 0 && finalDuration <= this.limit) {
 					parent.submit(nonceSb.toString(), argon, finalDuration);
+					if (finalDuration < 240) {
+						finds++;
+					} else {
+						shares++;
+					}
 				}
 				
-				parent.bestDL.getAndUpdate( (dl) -> {if (finalDuration < dl) return finalDuration; else return dl;} );
-				
 				hashCount++;
-				parent.hashes.incrementAndGet();
-				parent.currentHashes.incrementAndGet();
+				hashesRecent++;
 				statEnd = System.nanoTime();
-				parent.workerHash(this.id, finalDuration, statArgonEnd - statArgonBegin, (statArgonBegin - statBegin) + (statEnd - statArgonEnd));
+				
+				if (finalDuration < this.bestDL) {
+					this.bestDL = finalDuration;
+				}
+				this.argonTime += statArgonEnd - statArgonBegin;
+				this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
 			} catch (Exception e) {
 				System.err.println(id + "] This worker failed somehow. Killing it.");
 				e.printStackTrace();
 				active = false;
 			}
+			this.loopTime += System.currentTimeMillis() - statCycle;
 		}
 		System.out.println(id + "] This worker is now inactive.");
 		this.parent.hasherCount.decrementAndGet();

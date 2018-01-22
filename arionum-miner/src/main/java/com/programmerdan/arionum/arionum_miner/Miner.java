@@ -85,12 +85,23 @@ public class Miner {
 	private final ConcurrentHashMap<String, Double> workerLastRatio;
 	private final ConcurrentHashMap<String, AtomicLong> workerRateHashes;
 	private final ConcurrentHashMap<String, Double> workerRate;
+	private final ConcurrentHashMap<String, Double> workerAvgRate;
+	
+	/**
+	 * This is cummulative record of time the worker is aware of being alive and computing hashes.
+	 * 
+	 * Core efficiency is a measure of worker's known time vs. overall system time.
+	 */
+	private final ConcurrentHashMap<String, AtomicLong> workerClockTime;
+	private final ConcurrentHashMap<String, AtomicLong> workerLastReport;
+	private final ConcurrentHashMap<String, Double> workerCoreEfficiency;
 	
 	/**
 	 * One or more hashing threads.
 	 */
 	private final ExecutorService hashers;
 	protected final AtomicInteger hasherCount;
+	private final ConcurrentHashMap<String, Hasher> workers;
 	
 	/**
 	 * Count of all hashes produced by workers.
@@ -100,6 +111,7 @@ public class Miner {
 	 * Count of hashes this reporting period.
 	 */
 	protected final AtomicLong currentHashes;
+
 	/**
 	 * Record of best DL so far this block
 	 */
@@ -163,6 +175,8 @@ public class Miner {
 	private final AtomicLong submitParseTimeMax;
 	private final AtomicLong submitParseTimeMin;
 
+	protected final long wallClockBegin;
+	
 	public static void main(String[] args) {
 		(new Miner(args)).start();
 	}
@@ -171,10 +185,10 @@ public class Miner {
 		//TODO: increase
 		this.hasherMode = AdvMode.basic;
 		
-		this.hashers = Executors.newCachedThreadPool();
 		this.updaters = Executors.newSingleThreadExecutor();
 		this.submitters = Executors.newCachedThreadPool();
 		this.hasherCount = new AtomicInteger();
+		this.workers = new ConcurrentHashMap<String, Hasher>();
 	
 		/*stats*/
 		this.statistics = Executors.newCachedThreadPool();
@@ -196,6 +210,11 @@ public class Miner {
 		this.workerLastRatio = new ConcurrentHashMap<String, Double>();
 		this.workerRateHashes = new ConcurrentHashMap<String, AtomicLong>();
 		this.workerRate = new ConcurrentHashMap<String, Double>();
+		this.workerAvgRate = new ConcurrentHashMap<String, Double>();
+		
+		this.workerClockTime = new ConcurrentHashMap<String, AtomicLong>();
+		this.workerLastReport = new ConcurrentHashMap<String, AtomicLong>();
+		this.workerCoreEfficiency = new ConcurrentHashMap<String, Double>();
 		
 		/*end stats*/
 		
@@ -204,7 +223,7 @@ public class Miner {
 		this.bestDL = new AtomicLong(Long.MAX_VALUE);
 		this.sessionSubmits = new AtomicLong();
 		this.sessionRejects = new AtomicLong();
-		this.lastSpeed = new AtomicLong(System.currentTimeMillis());
+		this.lastSpeed = new AtomicLong();
 		
 		this.updateTimeAvg = new AtomicLong();
 		this.updateTimeMax = new AtomicLong(Long.MIN_VALUE);
@@ -267,8 +286,14 @@ public class Miner {
 			System.exit(1);
 		}
 		
+		System.out.println("You have " + Runtime.getRuntime().availableProcessors() + " processors vs. " + this.maxHashers + " hashers. ");
+		
+
+		this.hashers = Executors.newFixedThreadPool(this.maxHashers, Executors.privilegedThreadFactory());
+		
 		this.limit = 240; // default
 		this.worker = php_uniqid();
+		this.wallClockBegin = System.currentTimeMillis();
 	}
 	
 	public void start() {
@@ -288,7 +313,6 @@ public class Miner {
 		// end commit e14b696362fb
 		
 		active = true;
-		final long wallClockBegin = System.currentTimeMillis();
 		this.lastUpdate = wallClockBegin;
 		boolean firstRun = true;
 		cycles = 0;
@@ -305,7 +329,7 @@ public class Miner {
 							return Boolean.FALSE;
 						}
 						boolean endline = false;
-						
+
 						String cummSpeed = speed();
 						StringBuilder extra = new StringBuilder(node);
 						extra.append("/mine.php?q=info");
@@ -378,7 +402,10 @@ public class Miner {
 						if (limit != localLimit) {
 							limit = localLimit;
 						}
-						
+
+						if (endline) {
+							updateWorkers();
+						}
 						long sinceLastReport = System.currentTimeMillis() - lastReport;
 						if (sinceLastReport > 15000l) {//localLimit != limit || cycles == 3 || cycles == 18) {
 							lastReport = System.currentTimeMillis();
@@ -396,10 +423,13 @@ public class Miner {
 						con.disconnect();
 						updates++;
 						updateTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
-						if (endline) System.out.println();
+						if (endline) {
+							System.out.println();
+						}
 						if (sinceLastReport > 15000l && sinceLastReport < 5000000000l) {
 							printWorkerStats();
 						}
+						//System.out.println();
 						return Boolean.TRUE;					
 					} catch (IOException | ParseException e) {
 						lastUpdate = System.currentTimeMillis();
@@ -430,7 +460,11 @@ public class Miner {
 			}
 			
 			if (this.hasherCount.get() < maxHashers) {
-				this.hashers.submit(HasherFactory.createHasher(hasherMode, this, php_uniqid()));
+				String workerId = php_uniqid();
+				Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId);
+				updateWorker(hasher);
+				this.hashers.submit(hasher);
+				addWorker(workerId, hasher);
 			}
 			
 			try {
@@ -451,6 +485,11 @@ public class Miner {
 				}
 				cycles = 0;
 			}
+			
+			if (cycles % 2 == 0) {
+				refreshFromWorkers();
+			}
+			
 			cycles ++;
 		}
 		
@@ -458,7 +497,35 @@ public class Miner {
 		this.hashers.shutdown();
 		this.submitters.shutdown();
 	}
+	
+	protected void addWorker(String workerId, Hasher hasher) {
+		workers.put(workerId, hasher);
+	}
+	
+	protected void releaseWorker(String workerId) {
+		workers.remove(workerId);
+	}
+	
+	/**
+	 * We update all workers with latest information from pool / node
+	 */
+	protected void updateWorkers() {
+		workers.forEach( (workerId, hasher) -> { if (hasher != null && hasher.isActive()) { updateWorker(hasher); } else { releaseWorker(workerId); }});
+	}
+	
+	/**
+	 * We update a specific worker with latest information from pool / node.
+	 * @param hasher the worker to update
+	 */
+	protected void updateWorker(Hasher hasher) {
+		hasher.update(getDifficulty(), getBlockData(), getLimit(), getPublicKey());
+	}
 
+	/**
+	 * When a new worker is started, we zero out its stats.
+	 * 
+	 * @param workerId
+	 */
 	protected void workerInit(final String workerId) {
 		workerHashes.put(workerId, new AtomicLong(0l));
 		workerBlockShares.put(workerId, new AtomicLong(0l));
@@ -469,44 +536,75 @@ public class Miner {
 		workerRateHashes.put(workerId, new AtomicLong(0l));
 		workerRoundBestDL.put(workerId,  new AtomicLong(Long.MAX_VALUE));
 		workerRate.put(workerId, 0.0d);
+		workerAvgRate.put(workerId, 0.0d);
+		workerClockTime.put(workerId, new AtomicLong(0l));
+		workerCoreEfficiency.put(workerId,  0.0d);
+		workerLastReport.put(workerId, new AtomicLong(System.currentTimeMillis()));
 	}
 	
-	protected void workerHash(final String workerId, final long DL, final long argon, final long nonArgon) {
-		this.statistics.submit(new Runnable() {
-			public void run() {
-				long hashes = workerHashes.get(workerId).incrementAndGet();
-				long rateHashes = workerRateHashes.get(workerId).incrementAndGet();
-				
-				if (DL < 240) {// BLOCK
-					workerBlockFinds.get(workerId).incrementAndGet();
-				} else if (DL < limit) { // share
-					workerBlockShares.get(workerId).incrementAndGet();
-				}
-				workerRoundBestDL.get(workerId).getAndUpdate( (dl) -> {if (DL < dl) return DL; else return dl;} );
-				
-				long argonTime = workerArgonTime.get(workerId).addAndGet(argon);
-				long nonArgonTime = workerNonArgonTime.get(workerId).addAndGet(nonArgon);
-				if (hashes > 0 && hashes % 100 == 0) {
-					workerLastRatio.put(workerId, (double) argonTime / ((double) argonTime + nonArgonTime));
-					workerArgonTime.get(workerId).set(0l);
-					workerNonArgonTime.get(workerId).set(0l);
-					
-					// store rate -- clear rate hashes
-					workerRate.put(workerId, (double) rateHashes / ((double) ( (argonTime + nonArgonTime) / 1000000000l) ) );
-					workerRateHashes.get(workerId).set(0l);
-				}
+	/**
+	 * Periodically we ask for updated information from all workers.
+	 */
+	protected void refreshFromWorkers() {
+		//long wallTime = System.currentTimeMillis() - lastWorkerReport;
+		AtomicLong newRate = new AtomicLong();
+		workers.forEach(this.maxHashers,  (workerId, hasher) -> {
+			long allHashes = hasher.getHashes();
+			workerHashes.get(workerId).set(allHashes);
+			
+			long rateHashes = hasher.getHashesRecentExp();
+			long recentHashes = hasher.getHashesRecent();
+			workerRateHashes.get(workerId).set(rateHashes);
+			currentHashes.getAndAdd(recentHashes);
+			hashes.getAndAdd(recentHashes);
+			
+			long localDL = hasher.getBestDL();
+			bestDL.getAndUpdate((dl) -> {if (localDL < dl) return localDL; else return dl;});
+			workerRoundBestDL.get(workerId).set(localDL);
+			
+			// shares are nonces < difficulty > 0 and >= 240
+			workerBlockShares.get(workerId).set(hasher.getShares());
+			// finds are nonces < 240 (block discovery)
+			workerBlockFinds.get(workerId).set(hasher.getFinds());
+			
+			long argonTime = hasher.getArgonTimeExp();
+			workerArgonTime.get(workerId).set(argonTime);
+			
+			long nonArgonTime = hasher.getNonArgonTimeExp();
+			workerNonArgonTime.get(workerId).set(nonArgonTime);
+			if (argonTime > 0) {
+				workerLastRatio.put(workerId, (double) argonTime / ((double) argonTime + nonArgonTime));
 			}
+			
+			long seconds = (argonTime + nonArgonTime) / 1000000000l;
+			double rate = (double) rateHashes / ((double) seconds);
+			workerRate.put(workerId, rate);
+			workerAvgRate.put(workerId, (double) allHashes / ((double) (System.currentTimeMillis() - wallClockBegin) / 1000l) );
+
+			long localMilliseconds = hasher.getLoopTime();
+			workerCoreEfficiency.put(workerId, (((double) localMilliseconds)
+					/ ((double) (System.currentTimeMillis() - workerLastReport.get(workerId).getAndSet(System.currentTimeMillis()) ))));
+			
+			workerClockTime.get(workerId).addAndGet( localMilliseconds );
+			
+			hasher.clearTimers();
+			
+			newRate.addAndGet((long) (rate * 10000d));
 		});
+		this.lastSpeed.set(newRate.get());
 	}
 	
 	private void printWorkerStats() {
-		System.out.println(String.format("  %13s %12s %7s %7s %7s %5s %12s", "Worker ID", "Hashes", "H/s", "Argon %", "Shares", "Finds", "Block BestDL"));
+		System.out.println(String.format("  %13s %12s %7s %8s %7s %8s %7s %7s %5s %12s", "Worker ID", "Hashes", "Avg H/s", "TiC%", "Cur H/s", "Cur TiC%", "Argon %", "Shares", "Finds", "Block BestDL"));
 		workerRoundBestDL.forEach((workerId, dl) -> {
 			if (dl.get() < Long.MAX_VALUE) {
 				StringBuilder workerString = new StringBuilder(69);
 				workerString.append("  ").append(workerId).append(" ")
 					.append(String.format("%12d ", workerHashes.get(workerId).get()))
+					.append(String.format("%7.2f ", workerAvgRate.get(workerId)))
+					.append(String.format("%8.2f ", (workerClockTime.get(workerId).doubleValue() / (double) (System.currentTimeMillis() - wallClockBegin)) * 100d))
 					.append(String.format("%7.2f ", workerRate.get(workerId)))
+					.append(String.format("%8.2f ", workerCoreEfficiency.get(workerId) * 100d))
 					.append(String.format("%7.3f ", workerLastRatio.get(workerId) * 100d))
 					.append(String.format("%7d ", workerBlockShares.get(workerId).get()))
 					.append(String.format("%5d ", workerBlockFinds.get(workerId).get()))
@@ -572,7 +670,7 @@ public class Miner {
 					long parseTimeTracker = System.currentTimeMillis();
 					
 					JSONObject obj = (JSONObject) (new JSONParser()).parse(new InputStreamReader(con.getInputStream()));
-					// TESTINF: System.out.println(obj.toJSONString());
+
 					if (!"ok".equals((String) obj.get("status"))) {
 						sessionRejects.incrementAndGet();
 						System.out.println("Submit of " + nonce + " rejected, nonce did not confirm: " + (String) obj.get("status"));
@@ -580,13 +678,11 @@ public class Miner {
 						System.out.println("Submit of " + nonce + " confirmed!");
 					}
 					
-					//System.out.println("Determination based on reply: " + obj.toJSONString());
-					
 					con.disconnect();
+
 					submitTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
 				} catch (IOException | ParseException ioe) {
 					System.err.println("Non-fatal but tragic: Failed during construction or receipt of submission: " + ioe.getMessage());
-					//ioe.printStackTrace();
 					submitTime(System.currentTimeMillis() - executionTimeTracker);
 				}
 			}
@@ -603,11 +699,11 @@ public class Miner {
 	}
 	
 	private String speed() {
-		return String.format("%f", ((double) this.currentHashes.getAndSet(0)) / (((double) (System.currentTimeMillis() - this.lastSpeed.getAndSet(System.currentTimeMillis()))) / 1000d));
+		return String.format("%12.4f", (this.lastSpeed.doubleValue() / 10000d));
 	}
 
 	private String avgSpeed(long clockBegin) {
-		return String.format("%f", this.hashes.doubleValue() / (((double) (System.currentTimeMillis() - clockBegin)) / 1000d));
+		return String.format("%12.4f", this.hashes.doubleValue() / (((double) (System.currentTimeMillis() - clockBegin)) / 1000d));
 	}
 	
 	private void updateTime(long duration) {

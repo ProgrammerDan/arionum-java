@@ -6,4 +6,4 @@ then
  exit 1;
 fi
 
-java -jar target/@batchJarName@.jar pool http://aropool.com $1 1 basic true
+java -jar target/@batchJarName@.jar pool http://aropool.com $1 1 stable true
