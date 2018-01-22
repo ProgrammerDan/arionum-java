@@ -82,11 +82,11 @@ public class ExperimentalHasher extends Hasher {
 		// prealloc probably saves us 10% on this op sequence
 		hashBase = new StringBuilder(hashBufferSize); // size of key + nonce + difficult + argon + data + spacers
 		hashBase.append(this.publicKey).append("-");
-		hashBase.append(encNonce).append("-");
+		hashBase.append(nonceSb).append("-");
 		hashBase.append(this.data).append("-");
 		hashBase.append(this.difficultyString);
 		
-		rawNonce = encNonce;
+		rawNonce = nonceSb.toString();
 		rawHashBase = hashBase.toString();
 		System.out.println("new nonce: " + rawNonce);
 	}
