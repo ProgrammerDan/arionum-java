@@ -13,7 +13,7 @@
 
   You'll now have a clone of the Aronium-miner on your PC.
   
-5. Important: Check system variables and see whether JAVA_HOME is registered as a system variable. 
+5. **Important**: Check system variables and see whether JAVA_HOME is registered as a system variable. 
     - Go to run, go to “Edit the system environment variables” 
     - On the bottom click “Environment variables” 
     - Bottom variables are the “System variables” 
