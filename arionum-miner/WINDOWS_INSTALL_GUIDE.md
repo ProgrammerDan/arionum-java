@@ -21,9 +21,7 @@ In “Value of” put in the directory of the JavaSDK
 6. Start up a command prompt
 7. Navigate towards the aronium-miner directory (the one with the POM.xml file)
 8. Execute “mvn clean package” (do not used quotes)
-9. Create a bat file in the aronium-miner folder (where the POM.xml file is located) with the following in it:
-java -jar target\arionum-miner-0.0.7-SNAPSHOT.jar pool http://aropool.com/ [your_wallet] [# of cores]
-For example: java -jar target\arionum-miner-0.0.7-SNAPSHOT.jar pool http://aropool.com/ 3gQf1EUQ3uXPBkPF79BSHy5fRESriu4UudwTeJYzyMSkCyCNvE6qatYZJgx6XJjUzbJeuAXy18DN8jGUZ7NUQrEC 2
+9. Edit the run-pool.bat file. Change the part in the code to your arionum wallet adress and the amount of threads you want to use (standard is 1)
 10. Start up the bat file you just created.
 
 Need help? Contact Rezegen or ProgrammerDan for more help! 
