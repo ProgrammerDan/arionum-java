@@ -44,9 +44,9 @@ import de.mkammerer.argon2.Argon2Factory.Argon2Types;
  * @author ProgrammerDan (Daniel Boston)
  *
  */
-public class ExperimentalHasher extends Hasher {
+public class StableHasher extends Hasher {
 
-	public ExperimentalHasher(Miner parent, String id) {
+	public StableHasher(Miner parent, String id) {
 		super(parent, id);
 	}
 	
@@ -84,7 +84,7 @@ public class ExperimentalHasher extends Hasher {
 		}
 		if (active) {
 			parent.workerInit(id);
-			System.out.println(id + "] Spun up EXPERIMENTAL hashing worker in " + (System.currentTimeMillis() - start) + "ms");
+			System.out.println(id + "] Spun up Stable hashing worker in " + (System.currentTimeMillis() - start) + "ms");
 		}
 		
 		long statCycle = 0l;

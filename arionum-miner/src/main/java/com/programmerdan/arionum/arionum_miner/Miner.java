@@ -402,7 +402,10 @@ public class Miner {
 						if (limit != localLimit) {
 							limit = localLimit;
 						}
-						
+
+						if (endline) {
+							updateWorkers();
+						}
 						long sinceLastReport = System.currentTimeMillis() - lastReport;
 						if (sinceLastReport > 15000l) {//localLimit != limit || cycles == 3 || cycles == 18) {
 							lastReport = System.currentTimeMillis();
@@ -422,11 +425,11 @@ public class Miner {
 						updateTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
 						if (endline) {
 							System.out.println();
-							updateWorkers();
 						}
 						if (sinceLastReport > 15000l && sinceLastReport < 5000000000l) {
 							printWorkerStats();
 						}
+						//System.out.println();
 						return Boolean.TRUE;					
 					} catch (IOException | ParseException e) {
 						lastUpdate = System.currentTimeMillis();
