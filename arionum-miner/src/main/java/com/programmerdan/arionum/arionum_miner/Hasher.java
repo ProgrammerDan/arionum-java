@@ -47,7 +47,9 @@ public abstract class Hasher implements Runnable{
 	
 	// local copy of data, updated "off thread"
 	protected BigInteger difficulty;
+	protected String difficultyString;
 	protected String data;
+	protected int hashBufferSize;
 	protected long limit;
 	protected String publicKey;
 	
@@ -55,9 +57,17 @@ public abstract class Hasher implements Runnable{
 	protected long bestDL;
 	protected long shares;
 	protected long finds;
+	
+	/* Timing Stats, current */
+	protected long loopTime;
 	protected long argonTime;
 	protected long nonArgonTime;
 	protected long hashesRecent;
+
+	/* Timing Stats, prior round */
+	protected long priorArgonTime;
+	protected long priorNonArgonTime;
+	protected long priorHashesRecent;
 	
 	public long getBestDL() {
 		return bestDL;
@@ -79,12 +89,33 @@ public abstract class Hasher implements Runnable{
 		return nonArgonTime;
 	}
 	
+	public long getLoopTime() {
+		return loopTime;
+	}
+	
 	public long getHashesRecent() {
 		return hashesRecent;
 	}
 	
+	public long getArgonTimeExp() {
+		return argonTime + priorArgonTime;
+	}
+	
+	public long getNonArgonTimeExp() {
+		return nonArgonTime + priorNonArgonTime;
+	}
+	
+	public long getHashesRecentExp() {
+		return hashesRecent + priorHashesRecent;
+	}
+	
+	
 	public void clearTimers() {
 		synchronized(this) {
+			loopTime = 0;
+			priorArgonTime = argonTime;
+			priorNonArgonTime = nonArgonTime;
+			priorHashesRecent = hashesRecent;
 			argonTime = 0l;
 			nonArgonTime = 0l;
 			hashesRecent = 0l;
@@ -93,10 +124,12 @@ public abstract class Hasher implements Runnable{
 	
 	public void update(BigInteger difficulty, String data, long limit, String publicKey) {
 		this.difficulty = difficulty;
+		this.difficultyString = difficulty.toString();
 		if (!data.equals(this.data)) {
 			bestDL = Long.MAX_VALUE;
 		}
 		this.data = data;
+		this.hashBufferSize = 280 + this.data.length();
 		this.limit = limit;
 		this.publicKey = publicKey;
 	}

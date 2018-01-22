@@ -75,12 +75,15 @@ public class BasicHasher extends Hasher {
 			System.out.println(id + "] Spun up php-parity hashing worker in " + (System.currentTimeMillis() - start) + "ms");
 		}
 		
+		long statCycle = 0l;
 		long statBegin = 0l;
 		long statArgonBegin = 0l;
 		long statArgonEnd = 0l;
 		long statEnd = 0l;
 		
 		while (active) {
+			
+			statCycle = System.currentTimeMillis();
 			statBegin = System.nanoTime();
 			try {
 				random.nextBytes(nonce);
@@ -90,7 +93,7 @@ public class BasicHasher extends Hasher {
 				hashBase.append(this.publicKey).append("-");
 				hashBase.append(encNonce).append("-");
 				hashBase.append(this.data).append("-");
-				hashBase.append(difficulty);
+				hashBase.append(this.difficultyString);
 				statArgonBegin = System.nanoTime();
 				argon = argon2.hash(4, 16384, 4, hashBase.toString());
 				statArgonEnd = System.nanoTime();
@@ -152,6 +155,7 @@ public class BasicHasher extends Hasher {
 				e.printStackTrace();
 				active = false;
 			}
+			this.loopTime += System.currentTimeMillis() - statCycle;
 		}
 		System.out.println(id + "] This worker is now inactive.");
 		this.parent.hasherCount.decrementAndGet();

@@ -65,7 +65,6 @@ public class DebugHasher extends Hasher {
 		byte[] byteBase = null;
 		String argon = null;
 
-		StringBuilder hashedHash = new StringBuilder();
 		char[] nonceChar = null;
 		StringBuilder nonceSb = null;
 		
@@ -102,18 +101,17 @@ public class DebugHasher extends Hasher {
 		long duration2Comp = 0l;
 		long statsUpd = 0l;
 		
-		
+		long statCycle = 0l;
 		long statBegin = 0l;
 		long statArgonBegin = 0l;
 		long statArgonEnd = 0l;
 		long statEnd = 0l;
 		
 		while (active) {
+			statCycle = System.currentTimeMillis();
 			statBegin = System.nanoTime();
 			try {
 				long tracking = System.currentTimeMillis();
-				
-				BigInteger difficulty = parent.getDifficulty();
 
 				random.nextBytes(nonce);
 
@@ -135,11 +133,11 @@ public class DebugHasher extends Hasher {
 				tracking = System.currentTimeMillis();
 				
 				// prealloc probably saves us 10% on this op sequence
-				hashBase = new StringBuilder(280 + parent.getBlockData().length()); // size of key + none + difficult + argon + data + spacers
-				hashBase.append(parent.getPublicKey()).append("-");
+				hashBase = new StringBuilder(280 + this.data.length()); // size of key + none + difficult + argon + data + spacers
+				hashBase.append(this.publicKey).append("-");
 				hashBase.append(nonceSb).append("-");
-				hashBase.append(parent.getBlockData()).append("-");
-				hashBase.append(difficulty);
+				hashBase.append(this.data).append("-");
+				hashBase.append(this.difficulty);
 				preArgon += System.currentTimeMillis() - tracking;
 				tracking = System.currentTimeMillis();
 				
@@ -196,24 +194,30 @@ public class DebugHasher extends Hasher {
 				durationComp += System.currentTimeMillis() - tracking;
 				tracking = System.currentTimeMillis();
 
-				long finalDuration = bigDuration.divide(difficulty).longValue();
+				long finalDuration = bigDuration.divide(this.difficulty).longValue();
 				
 				duration2Comp += System.currentTimeMillis() - tracking;
 				tracking = System.currentTimeMillis();
 
 				
-				if (finalDuration > 0 && finalDuration <= parent.getLimit()) {
+				if (finalDuration > 0 && finalDuration <= this.limit) {
 
 					parent.submit(nonceSb.toString(), argon, finalDuration);
+					if (finalDuration < 240) {
+						finds++;
+					} else {
+						shares++;
+					}
 				}
 				
-				parent.bestDL.getAndUpdate( (dl) -> {if (finalDuration < dl) return finalDuration; else return dl;} );
-				
 				hashCount++;
-				parent.hashes.incrementAndGet();
-				parent.currentHashes.incrementAndGet();
+				hashesRecent++;
 				statEnd = System.nanoTime();
-				parent.workerHash(this.id, finalDuration, statArgonEnd - statArgonBegin, (statArgonBegin - statBegin) + (statEnd - statArgonEnd));
+				if (finalDuration < this.bestDL) {
+					this.bestDL = finalDuration;
+				}
+				this.argonTime += statArgonEnd - statArgonBegin;
+				this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
 				
 				statsUpd += System.currentTimeMillis() - tracking;
 				tracking = System.currentTimeMillis();
@@ -258,6 +262,7 @@ public class DebugHasher extends Hasher {
 				e.printStackTrace();
 				active = false;
 			}
+			this.loopTime += System.currentTimeMillis() - statCycle;
 		}
 		System.out.println(id + "] This worker is now inactive.");
 		this.parent.hasherCount.decrementAndGet();
