@@ -182,8 +182,7 @@ public class Miner {
 	}
 	
 	public Miner(String[] args) {
-		//TODO: increase
-		this.hasherMode = AdvMode.basic;
+		this.hasherMode = AdvMode.stable;
 		
 		this.updaters = Executors.newSingleThreadExecutor();
 		this.submitters = Executors.newCachedThreadPool();
