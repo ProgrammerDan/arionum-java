@@ -108,12 +108,12 @@ public class StableHasher extends Hasher {
 						nonceSb.append(ar);
 					}
 				}
-				
+								
 				// prealloc probably saves us 10% on this op sequence
 				// TODO: precompute this length when data is received
 				hashBase = new StringBuilder(hashBufferSize); // size of key + none + difficult + argon + data + spacers
 				hashBase.append(this.publicKey).append("-");
-				hashBase.append(encNonce).append("-");
+				hashBase.append(nonceSb).append("-");
 				hashBase.append(this.data).append("-");
 				// TODO: precompute difficulty as string
 				hashBase.append(this.difficultyString);

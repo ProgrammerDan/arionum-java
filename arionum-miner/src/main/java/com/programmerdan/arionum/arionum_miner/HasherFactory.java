@@ -40,8 +40,10 @@ public class HasherFactory {
 			return new BasicHasher(parent, id);
 		case debug:
 			return new DebugHasher(parent, id);
+		case stable:
 		case experimental:
-			return new ExperimentalHasher(parent, id);
+			return new StableHasher(parent, id);
+		//	return new ExperimentalHasher(parent, id);
 		default:
 			return new BasicHasher(parent, id);
 		}
