@@ -123,6 +123,7 @@ public class ExperimentalHasher extends Hasher {
 		long statArgonBegin = 0l;
 		long statArgonEnd = 0l;
 		long statEnd = 0l;
+		long stuck = 0;
 		
 		while (active) {
 			statCycle = System.currentTimeMillis();
@@ -160,8 +161,15 @@ public class ExperimentalHasher extends Hasher {
 				hashesRecent++;
 				statEnd = System.nanoTime();
 				
-				if (finalDuration < this.bestDL) {
+				if (finalDuration < this.bestDL) { // split the difference; if we're not getting movement after a while, just move on
 					this.bestDL = finalDuration;
+					stuck = 0;
+				} else {
+					stuck++;
+					if (priorHashesRecent > 0 && stuck > priorHashesRecent * 30) {
+						genNonce();
+						stuck = 0;
+					}
 				}
 				
 				//System.out.println("\033[1A\033[2K" + finalDuration);

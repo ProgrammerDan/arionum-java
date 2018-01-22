@@ -34,6 +34,8 @@ import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Base64.Encoder;
@@ -49,6 +51,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
+
+import de.mkammerer.argon2.Argon2;
+import de.mkammerer.argon2.Argon2Factory;
+import de.mkammerer.argon2.Argon2Factory.Argon2Types;
 
 /**
  * Miner. Functional equiv of arionum-miner.
@@ -757,7 +763,7 @@ public class Miner {
 		System.out.println("Utility Test on " + this.publicKey);
 		String refKey = this.publicKey;
 		
-		String decode = Utility.base58_decode(refKey);
+		/*String decode = Utility.base58_decode(refKey);
 		BigInteger decInt = Utility.base58_decodeInt(refKey);
 		System.out.println("  base58_decode: (" + decode.length() + ") " + decode );
 		System.out.println("  base58_decodeInt: " + decInt.toString() + " (" + decInt.doubleValue() + ") ");
@@ -826,7 +832,184 @@ public class Miner {
 			assert encNonce.equals(encNonce4);
 		}
 		
-		System.out.println("stripFunction Iterations: " + this.maxHashers + " a: " + a + " b: " + b + " c: " + c + " d: " + d);
+		System.out.println("stripFunction Iterations: " + this.maxHashers + " a: " + a + " b: " + b + " c: " + c + " d: " + d);*/
+		
+		SecureRandom random = new SecureRandom();
+		Encoder encoder = Base64.getEncoder();
+		String rawHashBase;
+		byte[] nonce = new byte[32];
+		String rawNonce;
+	
+		
+		String encNonce = null;
+		StringBuilder hashBase;
+		random.nextBytes(nonce);
+		encNonce = encoder.encodeToString(nonce);
+
+		char[] nonceChar = encNonce.toCharArray();
+
+		// shaves a bit off vs regex -- for this operation, about 50% savings
+		StringBuilder nonceSb = new StringBuilder(encNonce.length());
+		for (char ar : nonceChar) {
+			if (ar >= '0' && ar <= '9' || ar >= 'a' && ar <= 'z' || ar >= 'A' && ar <= 'Z') {
+				nonceSb.append(ar);
+			}
+		}
+		
+		BigInteger difficulty = BigInteger.valueOf(263701626l);
+		String difficultyString = difficulty.toString();
+		String data = "thisistestdatandnotreallyrepresentativebutletsuseit.";
+		// prealloc probably saves us 10% on this op sequence
+		hashBase = new StringBuilder(500); // size of key + nonce + difficult + argon + data + spacers
+		hashBase.append(refKey).append("-");
+		hashBase.append(nonceSb).append("-");
+		hashBase.append(data).append("-");
+		hashBase.append(difficultyString);
+		
+		rawNonce = nonceSb.toString();
+		rawHashBase = hashBase.toString();
+		
+		System.out.println("rawNonce: " + rawNonce + " \nrawHashBase: " + rawHashBase);
+		
+		String argon = null;
+		Argon2 argon2 = Argon2Factory.create(Argon2Types.ARGON2i);
+
+		MessageDigest sha512 = null;
+		try {
+			sha512 = MessageDigest.getInstance("SHA-512");
+		} catch (NoSuchAlgorithmException e1) {
+			System.err.println("Unable to find SHA-512 algorithm! Fatal error.");
+			e1.printStackTrace();
+			System.exit(1);
+			active = false;
+		}
+		
+		byte[] byteBase = null;
+		long[][] findBuckets = new long[8][256];
+		System.out.println();
+		for (int j = 0; j < this.maxHashers; j ++ ) {
+			hashBase = new StringBuilder(500);
+			argon = argon2.hash(4, 16384, 4, rawHashBase);
+			hashBase.append(rawHashBase).append(argon);
+
+			byteBase = hashBase.toString().getBytes();
+			for (int i = 0; i < 5; i++) {
+				byteBase = sha512.digest(byteBase);
+			}
+			byteBase = sha512.digest(byteBase);
+
+			findBuckets[0][byteBase[10] & 0xFF]++;
+			findBuckets[1][byteBase[15] & 0xFF]++;
+			findBuckets[2][byteBase[20] & 0xFF]++;
+			findBuckets[3][byteBase[23] & 0xFF]++;
+			findBuckets[4][byteBase[31] & 0xFF]++;
+			findBuckets[5][byteBase[40] & 0xFF]++;
+			findBuckets[6][byteBase[45] & 0xFF]++;
+			findBuckets[7][byteBase[55] & 0xFF]++;
+			
+			
+/*			StringBuilder duration = new StringBuilder(25);
+			duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
+					.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
+					.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
+
+			long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();*/
+			System.out.println("\033[1A\033[2K" + j);
+		}
+		
+		int uniformTarget = this.maxHashers / 256;
+		
+		for (int k = 0; k < 8; k++) {
+			StringBuilder sb = new StringBuilder(256);
+			long sum = 0; 
+			long[] interior = new long[uniformTarget * 3 + 1];
+			for (int q = 0; q < 256; q++) {
+				if (findBuckets[k][q] > uniformTarget * 3) {
+					interior[uniformTarget * 3]++;
+				} else {
+					interior[(int) findBuckets[k][q]]++;
+				}
+			}
+			sb.append(" [");
+			for (int p = 0; p < uniformTarget * 3 + 1 ; p++) {
+				sb.append("[").append(interior[p]);
+			}
+			System.out.println(k + "] " + sb.toString());
+		}
+		
+		System.out.println();
+
+		findBuckets = new long[8][256];
+		for (int j = 0; j < this.maxHashers; j ++ ) {
+			random.nextBytes(nonce);
+			encNonce = encoder.encodeToString(nonce);
+
+			nonceChar = encNonce.toCharArray();
+
+			// shaves a bit off vs regex -- for this operation, about 50% savings
+			nonceSb = new StringBuilder(encNonce.length());
+			for (char ar : nonceChar) {
+				if (ar >= '0' && ar <= '9' || ar >= 'a' && ar <= 'z' || ar >= 'A' && ar <= 'Z') {
+					nonceSb.append(ar);
+				}
+			}
+			
+			// prealloc probably saves us 10% on this op sequence
+			hashBase = new StringBuilder(500); // size of key + nonce + difficult + argon + data + spacers
+			hashBase.append(refKey).append("-");
+			hashBase.append(nonceSb).append("-");
+			hashBase.append(data).append("-");
+			hashBase.append(difficultyString);
+			
+			rawNonce = nonceSb.toString();
+			rawHashBase = hashBase.toString();
+			
+			hashBase = new StringBuilder(500);
+			argon = argon2.hash(4, 16384, 4, rawHashBase);
+			hashBase.append(rawHashBase).append(argon);
+
+			byteBase = hashBase.toString().getBytes();
+			for (int i = 0; i < 5; i++) {
+				byteBase = sha512.digest(byteBase);
+			}
+			byteBase = sha512.digest(byteBase);
+
+			findBuckets[0][byteBase[10] & 0xFF]++;
+			findBuckets[1][byteBase[15] & 0xFF]++;
+			findBuckets[2][byteBase[20] & 0xFF]++;
+			findBuckets[3][byteBase[23] & 0xFF]++;
+			findBuckets[4][byteBase[31] & 0xFF]++;
+			findBuckets[5][byteBase[40] & 0xFF]++;
+			findBuckets[6][byteBase[45] & 0xFF]++;
+			findBuckets[7][byteBase[55] & 0xFF]++;
+			
+			
+/*			StringBuilder duration = new StringBuilder(25);
+			duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
+					.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
+					.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
+
+			long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();*/
+			System.out.println("\033[1A\033[2K" + j);
+		}
+
+		for (int k = 0; k < 8; k++) {
+			StringBuilder sb = new StringBuilder(256);
+			long[] interior = new long[uniformTarget * 3 + 1];
+			for (int q = 0; q < 256; q++) {
+				if (findBuckets[k][q] > uniformTarget * 3) {
+					interior[uniformTarget * 3]++;
+				} else {
+					interior[(int) findBuckets[k][q]]++;
+				}
+			}
+			sb.append(" [");
+			for (int p = 0; p < uniformTarget * 3 + 1 ; p++) {
+				sb.append("[").append(interior[p]);
+			}
+			System.out.println(k + "] " + sb.toString());
+		}
+
 		
 		System.out.println("Done static testing.");
 	}
