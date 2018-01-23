@@ -35,7 +35,7 @@ Pick a place to install. For linux:
 
 `git clone git://github.com/ProgrammerDan/arionum-java`
 
-`cd arionum-miner`
+`cd arionum-java/arionum-miner`
 
 `mvn clean package`
 
