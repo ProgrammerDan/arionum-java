@@ -27,6 +27,20 @@ Clone this repository, change directory into ```arionum-miner```
 
 Execute ```mvn clean package``` -- this will build the miner
 
+##### Summary:
+
+Pick a place to install. For linux:
+
+`sudo apt-get install maven git openjdk-8-jdk`
+
+`git clone git://github.com/ProgrammerDan/arionum-java`
+
+`cd arionum-miner`
+
+`mvn clean package`
+
+`./run-pool.sh your-address-here`
+
 #### To run
 
 ##### For Linux:
