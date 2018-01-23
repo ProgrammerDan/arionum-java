@@ -61,9 +61,9 @@ import de.mkammerer.argon2.Argon2Factory.Argon2Types;
  * @author ProgrammerDan (Daniel Boston)
  *
  */
-public class ExperimentalHasher extends Hasher {
+public class RawHasher extends Hasher {
 
-	public ExperimentalHasher(Miner parent, String id) {
+	public RawHasher(Miner parent, String id) {
 		super(parent, id);
 	}
 	

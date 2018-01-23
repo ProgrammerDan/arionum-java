@@ -24,28 +24,38 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.
 
  */
-package com.programmerdan.arionum.arionum_miner;
+package com.programmerdan.arionum.arionum_benchmark;
 
 import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.Base64.Encoder;
 
 import de.mkammerer.argon2.Argon2;
 import de.mkammerer.argon2.Argon2Factory;
 import de.mkammerer.argon2.Argon2Factory.Argon2Types;
 
-public class BasicHasher extends Hasher {
-	public BasicHasher(Miner parent, String id) {
-		super(parent, id);
-	}
+/**
+ * The intent for this hasher is deeper self-inspection of running times of various components.
+ * It can be used as a testbed for comparative performance. It is not meant to be used for general use
+ * 
+ * @author ProgrammerDan (Daniel Boston)
+ *
+ */
+public class StableHasher extends Hasher {
 
+	public StableHasher() {
+		
+	}
+	
+	
 	@Override
 	public void run() {
-		this.parent.hasherCount.incrementAndGet();
 		active = true;
 		long start = System.currentTimeMillis();
+		long lastUpdate = start;
 
 		byte[] nonce = new byte[32];
 		String encNonce = null;
@@ -55,7 +65,9 @@ public class BasicHasher extends Hasher {
 		byte[] byteBase = null;
 		String argon = null;
 
-		StringBuilder hashedHash = new StringBuilder();
+		Encoder encoder = Base64.getEncoder();
+		char[] nonceChar = null;
+		StringBuilder nonceSb = null;
 
 		SecureRandom random = new SecureRandom();
 
@@ -71,8 +83,8 @@ public class BasicHasher extends Hasher {
 			active = false;
 		}
 		if (active) {
-			parent.workerInit(id);
-			System.out.println(id + "] Spun up php-parity hashing worker in " + (System.currentTimeMillis() - start) + "ms");
+			System.out.println("Spun up Stable hashing worker in " + (System.currentTimeMillis() - start) + "ms");
+			start = System.currentTimeMillis();
 		}
 		
 		long statCycle = 0l;
@@ -81,18 +93,41 @@ public class BasicHasher extends Hasher {
 		long statArgonEnd = 0l;
 		long statEnd = 0l;
 		
+		int cCount = 0;
+		double speed = 0d;
+		double avgSpeed = 0d;
+
+		statCycle = System.currentTimeMillis();
+		
 		while (active) {
 			
-			statCycle = System.currentTimeMillis();
+			if (System.currentTimeMillis()-lastUpdate > 2000) {
+				System.out.println("--> Last hash rate: " + speed + " H/s   Average: " + avgSpeed + " H/s  Total hashes: " + hashCount + "  Mining Time: " + ((System.currentTimeMillis() - start) / 1000d) +
+						"  Shares: " + shares + " Finds: " + finds);
+				lastUpdate = System.currentTimeMillis();
+			}
+			
 			statBegin = System.nanoTime();
 			try {
 				random.nextBytes(nonce);
-				encNonce = Base64.getEncoder().encodeToString(nonce);
-				encNonce = encNonce.replaceAll("[^a-zA-Z0-9]", ""); // TODO: static test vs other impls
-				hashBase = new StringBuilder();
+				encNonce = encoder.encodeToString(nonce);
+				
+				// shaves a bit off vs regex -- for this operation, about 50% savings
+				nonceSb = new StringBuilder(encNonce.length());
+				nonceChar = encNonce.toCharArray();
+				for (char ar : nonceChar) {
+					if (ar >= '0' && ar <= '9' || ar >= 'a' && ar <= 'z' || ar >= 'A' && ar <= 'Z') {
+						nonceSb.append(ar);
+					}
+				}
+								
+				// prealloc probably saves us 10% on this op sequence
+				// TODO: precompute this length when data is received
+				hashBase = new StringBuilder(hashBufferSize); // size of key + none + difficult + argon + data + spacers
 				hashBase.append(this.publicKey).append("-");
-				hashBase.append(encNonce).append("-");
+				hashBase.append(nonceSb).append("-");
 				hashBase.append(this.data).append("-");
+				// TODO: precompute difficulty as string
 				hashBase.append(this.difficultyString);
 				statArgonBegin = System.nanoTime();
 				argon = argon2.hash(4, 16384, 4, hashBase.toString());
@@ -105,63 +140,40 @@ public class BasicHasher extends Hasher {
 					byteBase = sha512.digest(byteBase);
 				}
 				byteBase = sha512.digest(byteBase);
-				// see https://stackoverflow.com/a/33085670
-				hashedHash = new StringBuilder(); // TODO: Timing tests.
-				// for (int j = 0; j < byteBase.length; j++) {
-				// hashedHash.append(Integer.toString((byteBase[j] & 0xff) +
-				// 0x100, 16).substring(1));
-				// }
-				// or see https://stackoverflow.com/a/19722967
-				BigInteger bi = new BigInteger(1, byteBase);
-				hashedHash.append(String.format("%0" + (byteBase.length << 1) + "x", bi));
 
-				StringBuilder duration = new StringBuilder();
-				duration.append(hexdec_equiv(hashedHash, 10)).append(hexdec_equiv(hashedHash, 15))
-						.append(hexdec_equiv(hashedHash, 20)).append(hexdec_equiv(hashedHash, 23))
-						.append(hexdec_equiv(hashedHash, 31)).append(hexdec_equiv(hashedHash, 40))
-						.append(hexdec_equiv(hashedHash, 45)).append(hexdec_equiv(hashedHash, 55));
-
-				// TODO: Bypass double ended conversion; no reason to go from
-				// binary to hex to dec; go straight from bin to dec for max
-				// eff.
+				StringBuilder duration = new StringBuilder(25);
+				duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
+						.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
+						.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
 
 				long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
 				if (finalDuration > 0 && finalDuration <= this.limit) {
-					parent.submit(encNonce, argon, finalDuration);
-					if (finalDuration <= 240) {
+					if (finalDuration < 240) {
 						finds++;
 					} else {
 						shares++;
 					}
 				}
 				
-				//parent.bestDL.getAndUpdate( (dl) -> {if (finalDuration < dl) return finalDuration; else return dl;} );
-				
 				hashCount++;
-				hashesRecent++;
-				//parent.hashes.incrementAndGet();
-				//parent.currentHashes.incrementAndGet();
+				cCount++;
 				statEnd = System.nanoTime();
-				//parent.workerHash(this.id, finalDuration, statArgonEnd - statArgonBegin, (statArgonBegin - statBegin) + (statEnd - statArgonEnd));
 				
-				if (finalDuration < this.bestDL) {
-					this.bestDL = finalDuration;
+				if (cCount == 100) {
+					cCount = 0;
+					long cycleEnd = System.currentTimeMillis();
+					speed = 100d / ((cycleEnd - statCycle)/ 1000d);
+					avgSpeed = (double) hashCount / ((cycleEnd - start) / 1000d);
+					statCycle = cycleEnd;
 				}
-				this.argonTime += statArgonEnd - statArgonBegin;
-				this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
 				
 			} catch (Exception e) {
-				System.err.println(id + "] This worker failed somehow. Killing it.");
+				System.err.println("This worker failed somehow. Killing it.");
 				e.printStackTrace();
 				active = false;
 			}
-			this.loopTime += System.currentTimeMillis() - statCycle;
 		}
-		System.out.println(id + "] This worker is now inactive.");
-		this.parent.hasherCount.decrementAndGet();
+		System.out.println("This worker is now inactive.");
 	}
 	
-	public int hexdec_equiv(StringBuilder m, int index) {
-		return Integer.parseInt(m.substring(index * 2, index * 2 + 2), 16);
-	}
 }

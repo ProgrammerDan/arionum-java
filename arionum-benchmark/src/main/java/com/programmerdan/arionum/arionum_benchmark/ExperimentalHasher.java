@@ -24,7 +24,7 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.
 
  */
-package com.programmerdan.arionum.arionum_miner;
+package com.programmerdan.arionum.arionum_benchmark;
 
 import java.math.BigInteger;
 import java.security.MessageDigest;
@@ -63,8 +63,7 @@ import de.mkammerer.argon2.Argon2Factory.Argon2Types;
  */
 public class ExperimentalHasher extends Hasher {
 
-	public ExperimentalHasher(Miner parent, String id) {
-		super(parent, id);
+	public ExperimentalHasher() {
 	}
 	
 	private SecureRandom random = new SecureRandom();
@@ -73,13 +72,8 @@ public class ExperimentalHasher extends Hasher {
 	private byte[] nonce = new byte[32];
 	private String rawNonce;
 	
-	@Override
-	public void update(BigInteger difficulty, String data, long limit, String publicKey) {
-		super.update(difficulty, data, limit, publicKey);
-		
-		genNonce();
-	}
-	
+	private long bestDL;
+
 	/**
 	 */
 	private void genNonce() {
@@ -107,14 +101,15 @@ public class ExperimentalHasher extends Hasher {
 		
 		rawNonce = nonceSb.toString();
 		rawHashBase = hashBase.toString();
+		bestDL = Long.MAX_VALUE;
 	}
 	
 	
 	@Override
 	public void run() {
-		this.parent.hasherCount.incrementAndGet();
 		active = true;
 		long start = System.currentTimeMillis();
+		long lastUpdate = start;
 
 		StringBuilder hashBase = null;
 		byte[] byteBase = null;
@@ -132,8 +127,9 @@ public class ExperimentalHasher extends Hasher {
 			active = false;
 		}
 		if (active) {
-			parent.workerInit(id);
-			System.out.println(id + "] Spun up EXPERIMENTAL hashing worker in " + (System.currentTimeMillis() - start) + "ms");
+			System.out.println("Spun up EXPERIMENTAL hashing worker in " + (System.currentTimeMillis() - start) + "ms");
+			start = System.currentTimeMillis();
+			genNonce();
 		}
 		
 		long statCycle = 0l;
@@ -143,8 +139,20 @@ public class ExperimentalHasher extends Hasher {
 		long statEnd = 0l;
 		long stuck = 0;
 		
+		int cCount = 0;
+		double speed = 0d;
+		double avgSpeed = 0d;
+		
+		statCycle = System.currentTimeMillis();
+
 		while (active) {
-			statCycle = System.currentTimeMillis();
+			
+			if (System.currentTimeMillis()-lastUpdate > 2000) {
+				System.out.println("--> Last hash rate: " + speed + " H/s   Average: " + avgSpeed + " H/s  Total hashes: " + hashCount + "  Mining Time: " + ((System.currentTimeMillis() - start) / 1000d) +
+						"  Shares: " + shares + " Finds: " + finds);
+				lastUpdate = System.currentTimeMillis();
+			}
+			
 			statBegin = System.nanoTime();
 			try {
 				hashBase = new StringBuilder(this.hashBufferSize);
@@ -166,7 +174,6 @@ public class ExperimentalHasher extends Hasher {
 
 				long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
 				if (finalDuration > 0 && finalDuration <= this.limit) {
-					parent.submit(rawNonce, argon, finalDuration);
 					if (finalDuration <= 240) {
 						finds++;
 					} else {
@@ -176,7 +183,7 @@ public class ExperimentalHasher extends Hasher {
 				}
 				
 				hashCount++;
-				hashesRecent++;
+				cCount++;
 				statEnd = System.nanoTime();
 				
 				if (finalDuration < this.bestDL) { // split the difference; if we're not getting movement after a while, just move on
@@ -184,25 +191,28 @@ public class ExperimentalHasher extends Hasher {
 					stuck = 0;
 				} else {
 					stuck++;
-					if (priorHashesRecent > 0 && stuck > priorHashesRecent * 15) {
+					if (stuck > avgSpeed * 15) {
 						genNonce();
 						stuck = 0;
 					}
 				}
 				
-				//System.out.println("\033[1A\033[2K" + finalDuration);
 				
-				this.argonTime += statArgonEnd - statArgonBegin;
-				this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
+				if (cCount == 100) {
+					cCount = 0;
+					long cycleEnd = System.currentTimeMillis();
+					speed = 100d / ((cycleEnd - statCycle)/ 1000d);
+					avgSpeed = (double) hashCount / ((cycleEnd - start) / 1000d);
+					statCycle = cycleEnd;
+				}
+				
 			} catch (Exception e) {
-				System.err.println(id + "] This worker failed somehow. Killing it.");
+				System.err.println("This worker failed somehow. Killing it.");
 				e.printStackTrace();
 				active = false;
 			}
-			this.loopTime += System.currentTimeMillis() - statCycle;
 		}
-		System.out.println(id + "] This worker is now inactive.");
-		this.parent.hasherCount.decrementAndGet();
+		System.out.println("This worker is now inactive.");
 	}
 	
 }
