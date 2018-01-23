@@ -1,4 +1,3 @@
-/**
 The MIT License (MIT)
 Copyright (c) 2018 AroDev, adaptation portions (c) 2018 ProgrammerDan (Daniel Boston)
 
@@ -23,29 +22,5 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.
 
- */
-package com.programmerdan.arionum.arionum_miner;
 
-/**
- * Straightforward factory-esque pattern, tied to optional AdvMod enum.
- * 
- * @author ProgrammerDan (Daniel Boston)
- *
- */
-public class HasherFactory {
-
-	public static Hasher createHasher(AdvMode mode, Miner parent, String id) {
-		switch(mode) {
-		case basic:
-			return new BasicHasher(parent, id);
-		case debug:
-			return new DebugHasher(parent, id);
-		case stable:
-			return new StableHasher(parent, id);
-		case experimental:
-			return new ExperimentalHasher(parent, id);
-		default:
-			return new StableHasher(parent, id);
-		}
-	}
-}
+Libraries used (such as argon2-jvm and json-simple) are covered by their own licenses, I use them as-is without warranty.

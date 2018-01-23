@@ -24,7 +24,7 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.
 
  */
-package com.programmerdan.arionum.arionum_miner;
+package com.programmerdan.arionum.arionum_benchmark;
 
 import java.math.BigInteger;
 import java.security.MessageDigest;
@@ -37,15 +37,15 @@ import de.mkammerer.argon2.Argon2Factory;
 import de.mkammerer.argon2.Argon2Factory.Argon2Types;
 
 public class BasicHasher extends Hasher {
-	public BasicHasher(Miner parent, String id) {
-		super(parent, id);
+	public BasicHasher() {
+		super();
 	}
 
 	@Override
 	public void run() {
-		this.parent.hasherCount.incrementAndGet();
 		active = true;
 		long start = System.currentTimeMillis();
+		long lastUpdate = start;
 
 		byte[] nonce = new byte[32];
 		String encNonce = null;
@@ -71,8 +71,8 @@ public class BasicHasher extends Hasher {
 			active = false;
 		}
 		if (active) {
-			parent.workerInit(id);
-			System.out.println(id + "] Spun up php-parity hashing worker in " + (System.currentTimeMillis() - start) + "ms");
+			System.out.println("Spun up php-parity hashing worker in " + (System.currentTimeMillis() - start) + "ms");
+			start = System.currentTimeMillis();
 		}
 		
 		long statCycle = 0l;
@@ -80,10 +80,21 @@ public class BasicHasher extends Hasher {
 		long statArgonBegin = 0l;
 		long statArgonEnd = 0l;
 		long statEnd = 0l;
+
+		int cCount = 0;
+		double speed = 0d;
+		double avgSpeed = 0d;
+
+		statCycle = System.currentTimeMillis();
 		
 		while (active) {
 			
-			statCycle = System.currentTimeMillis();
+			if (System.currentTimeMillis()-lastUpdate > 2000) {
+				System.out.println("--> Last hash rate: " + speed + " H/s   Average: " + avgSpeed + " H/s  Total hashes: " + hashCount + "  Mining Time: " + ((System.currentTimeMillis() - start) / 1000d) +
+						"  Shares: " + shares + " Finds: " + finds);
+				lastUpdate = System.currentTimeMillis();
+			}
+			
 			statBegin = System.nanoTime();
 			try {
 				random.nextBytes(nonce);
@@ -127,7 +138,6 @@ public class BasicHasher extends Hasher {
 
 				long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
 				if (finalDuration > 0 && finalDuration <= this.limit) {
-					parent.submit(encNonce, argon, finalDuration);
 					if (finalDuration <= 240) {
 						finds++;
 					} else {
@@ -138,27 +148,27 @@ public class BasicHasher extends Hasher {
 				//parent.bestDL.getAndUpdate( (dl) -> {if (finalDuration < dl) return finalDuration; else return dl;} );
 				
 				hashCount++;
-				hashesRecent++;
+				cCount++;
 				//parent.hashes.incrementAndGet();
 				//parent.currentHashes.incrementAndGet();
 				statEnd = System.nanoTime();
 				//parent.workerHash(this.id, finalDuration, statArgonEnd - statArgonBegin, (statArgonBegin - statBegin) + (statEnd - statArgonEnd));
 				
-				if (finalDuration < this.bestDL) {
-					this.bestDL = finalDuration;
+				if (cCount == 100) {
+					cCount = 0;
+					long cycleEnd = System.currentTimeMillis();
+					speed = 100d / ((cycleEnd - statCycle)/ 1000d);
+					avgSpeed = (double) hashCount / ((cycleEnd - start) / 1000d);
+					statCycle = cycleEnd;
 				}
-				this.argonTime += statArgonEnd - statArgonBegin;
-				this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
 				
 			} catch (Exception e) {
-				System.err.println(id + "] This worker failed somehow. Killing it.");
+				System.err.println("This worker failed somehow. Killing it.");
 				e.printStackTrace();
 				active = false;
 			}
-			this.loopTime += System.currentTimeMillis() - statCycle;
 		}
-		System.out.println(id + "] This worker is now inactive.");
-		this.parent.hasherCount.decrementAndGet();
+		System.out.println("This worker is now inactive.");
 	}
 	
 	public int hexdec_equiv(StringBuilder m, int index) {

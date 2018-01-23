@@ -203,7 +203,7 @@ public class DebugHasher extends Hasher {
 				if (finalDuration > 0 && finalDuration <= this.limit) {
 
 					parent.submit(nonceSb.toString(), argon, finalDuration);
-					if (finalDuration < 240) {
+					if (finalDuration <= 240) {
 						finds++;
 					} else {
 						shares++;

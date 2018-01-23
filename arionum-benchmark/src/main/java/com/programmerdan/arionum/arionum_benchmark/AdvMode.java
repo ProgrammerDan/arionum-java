@@ -24,28 +24,10 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.
 
  */
-package com.programmerdan.arionum.arionum_miner;
+package com.programmerdan.arionum.arionum_benchmark;
 
-/**
- * Straightforward factory-esque pattern, tied to optional AdvMod enum.
- * 
- * @author ProgrammerDan (Daniel Boston)
- *
- */
-public class HasherFactory {
-
-	public static Hasher createHasher(AdvMode mode, Miner parent, String id) {
-		switch(mode) {
-		case basic:
-			return new BasicHasher(parent, id);
-		case debug:
-			return new DebugHasher(parent, id);
-		case stable:
-			return new StableHasher(parent, id);
-		case experimental:
-			return new ExperimentalHasher(parent, id);
-		default:
-			return new StableHasher(parent, id);
-		}
-	}
+public enum AdvMode {
+	basic,
+	experimental,
+	stable
 }
