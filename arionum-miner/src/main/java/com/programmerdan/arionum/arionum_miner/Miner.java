@@ -29,6 +29,7 @@ package com.programmerdan.arionum.arionum_miner;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.lang.Thread.UncaughtExceptionHandler;
 import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
@@ -60,7 +61,7 @@ import de.mkammerer.argon2.Argon2Factory.Argon2Types;
  * Miner. Functional equiv of arionum-miner.
  *
  */
-public class Miner {
+public class Miner implements UncaughtExceptionHandler {
 	
 	public static final long UPDATING_DELAY = 2000l;
 	private int maxHashers;
@@ -183,7 +184,9 @@ public class Miner {
 	protected final long wallClockBegin;
 	
 	public static void main(String[] args) {
-		(new Miner(args)).start();
+		Miner miner = new Miner(args);
+		Thread.setDefaultUncaughtExceptionHandler(miner);	
+		miner.start();
 	}
 	
 	public Miner(String[] args) {
@@ -904,13 +907,6 @@ public class Miner {
 			findBuckets[6][byteBase[45] & 0xFF]++;
 			findBuckets[7][byteBase[55] & 0xFF]++;
 			
-			
-/*			StringBuilder duration = new StringBuilder(25);
-			duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
-					.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
-					.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
-
-			long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();*/
 			System.out.println("\033[1A\033[2K" + j);
 		}
 		
@@ -980,13 +976,6 @@ public class Miner {
 			findBuckets[6][byteBase[45] & 0xFF]++;
 			findBuckets[7][byteBase[55] & 0xFF]++;
 			
-			
-/*			StringBuilder duration = new StringBuilder(25);
-			duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
-					.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
-					.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
-
-			long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();*/
 			System.out.println("\033[1A\033[2K" + j);
 		}
 
@@ -1009,5 +998,14 @@ public class Miner {
 
 		
 		System.out.println("Done static testing.");
+	}
+
+	@Override
+	public void uncaughtException(Thread t, Throwable e) {
+		System.err.println("Detected thread " + t.getName() + " death due to error: " + e.getMessage());
+		e.printStackTrace();
+		
+		System.err.println("\n\nThis is probably fatal, so exiting now.");
+		System.exit(1);
 	}
 }

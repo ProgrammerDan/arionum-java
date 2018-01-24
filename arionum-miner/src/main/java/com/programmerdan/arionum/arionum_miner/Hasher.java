@@ -39,7 +39,22 @@ public abstract class Hasher implements Runnable{
 
 	protected Miner parent;
 
-	public abstract void run();
+	public void run() {
+		try {
+			go();
+		} catch (Exception e) {
+			System.err.println("Detected thread " + Thread.currentThread().getName() + " death due to error: " + e.getMessage());
+			e.printStackTrace();
+			
+			System.err.println("\n\nThis is probably fatal, so exiting now.");
+			System.exit(1);
+		}
+	}
+	
+	/**
+	 * Instead of run, go -- since we now wrap run() into a catch block since our Executors don't support UncaughtExceptions in an intuitive way
+	 */
+	public abstract void go();
 
 	protected boolean active;
 	protected String id;

@@ -4,11 +4,11 @@
 
 	<groupId>com.programmerdan.arionum</groupId>
 	<artifactId>arionum-miner</artifactId>
-	<version>0.0.9-SNAPSHOT</version>
+	<version>0.0.10-SNAPSHOT</version>
 	<packaging>jar</packaging>
 
 	<name>arionum-miner-java</name>
-	<url>https://github.com/ProgrammerDan/arionum-miner-java</url>
+	<url>https://github.com/ProgrammerDan/arionum-java/arionum-miner</url>
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

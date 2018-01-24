@@ -50,9 +50,8 @@ public class StableHasher extends Hasher {
 		super(parent, id);
 	}
 	
-	
 	@Override
-	public void run() {
+	public void go() {
 		this.parent.hasherCount.incrementAndGet();
 		active = true;
 		long start = System.currentTimeMillis();

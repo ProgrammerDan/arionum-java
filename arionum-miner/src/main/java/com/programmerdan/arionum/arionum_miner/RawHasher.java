@@ -109,9 +109,8 @@ public class RawHasher extends Hasher {
 		rawHashBase = hashBase.toString();
 	}
 	
-	
 	@Override
-	public void run() {
+	public void go() {
 		this.parent.hasherCount.incrementAndGet();
 		active = true;
 		long start = System.currentTimeMillis();

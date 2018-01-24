@@ -42,7 +42,7 @@ public class BasicHasher extends Hasher {
 	}
 
 	@Override
-	public void run() {
+	public void go() {
 		this.parent.hasherCount.incrementAndGet();
 		active = true;
 		long start = System.currentTimeMillis();
@@ -105,13 +105,8 @@ public class BasicHasher extends Hasher {
 					byteBase = sha512.digest(byteBase);
 				}
 				byteBase = sha512.digest(byteBase);
-				// see https://stackoverflow.com/a/33085670
 				hashedHash = new StringBuilder(); // TODO: Timing tests.
-				// for (int j = 0; j < byteBase.length; j++) {
-				// hashedHash.append(Integer.toString((byteBase[j] & 0xff) +
-				// 0x100, 16).substring(1));
-				// }
-				// or see https://stackoverflow.com/a/19722967
+				// see https://stackoverflow.com/a/19722967
 				BigInteger bi = new BigInteger(1, byteBase);
 				hashedHash.append(String.format("%0" + (byteBase.length << 1) + "x", bi));
 
