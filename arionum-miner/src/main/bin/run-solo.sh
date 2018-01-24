@@ -6,4 +6,4 @@ then
  exit 1;
 fi
 
-java -jar target/@batchJarName@.jar solo $1 $2 $3 1 stable true
+java -jar target/@batchJarName@-shaded.jar solo $1 $2 $3 1 stable true

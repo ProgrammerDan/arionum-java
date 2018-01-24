@@ -4,7 +4,7 @@
 
 	<groupId>com.programmerdan.arionum</groupId>
 	<artifactId>arionum-miner</artifactId>
-	<version>0.0.10-SNAPSHOT</version>
+	<version>0.1.0-SNAPSHOT</version>
 	<packaging>jar</packaging>
 
 	<name>arionum-miner-java</name>
@@ -40,6 +40,7 @@
 					</execution>
 				</executions>
 				<configuration>
+					<shadedArtifactAttached>true</shadedArtifactAttached>
 					<transformers>
 						<transformer
 							implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
@@ -65,7 +66,7 @@
 					</artifactSet>
 					<filters>
 						<filter>
-							<artifact>de.mkammerer::*</artifact>
+							<artifact>de.mkammerer:*</artifact>
 							<includes>
 								<include>**</include>
 							</includes>
@@ -80,6 +81,66 @@
 				</configuration>
 			</plugin>
 			<plugin>
+				<groupId>com.akathist.maven.plugins.launch4j</groupId>
+				<artifactId>launch4j-maven-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>l4j-cli-pkg</id>
+						<phase>package</phase>
+						<goals>
+							<goal>launch4j</goal>
+						</goals>
+						<configuration>
+						  <dontWrapJar>false</dontWrapJar>
+  <headerType>console</headerType>
+  <jar>target/${project.build.finalName}-shaded.jar</jar>
+  <outfile>target/arionum-java-miner-${project.version}.exe</outfile>
+  <errTitle></errTitle>
+  <cmdLine></cmdLine>
+  <chdir>.</chdir>
+  <priority>normal</priority>
+  <downloadUrl>http://java.com/download</downloadUrl>
+  <supportUrl></supportUrl>
+  <stayAlive>false</stayAlive>
+  <restartOnCrash>false</restartOnCrash>
+  <manifest></manifest>
+  <icon></icon>
+  <jre>
+    <path></path>
+    <bundledJre64Bit>false</bundledJre64Bit>
+    <bundledJreAsFallback>false</bundledJreAsFallback>
+    <minVersion>1.8.0</minVersion>
+    <maxVersion></maxVersion>
+    <jdkPreference>preferJre</jdkPreference>
+    <runtimeBits>64/32</runtimeBits>
+  </jre>
+  <versionInfo>
+    <fileVersion>0.1.0.0</fileVersion>
+    <txtFileVersion>${project.version}</txtFileVersion>
+    <fileDescription>Arionum Miner in Java</fileDescription>
+    <copyright>2018 AroDev, portions ProgrammerDan (MIT license)</copyright>
+    <productVersion>0.1.0.0</productVersion>
+    <txtProductVersion>${project.version}</txtProductVersion>
+    <productName>Arionum Miner in Java</productName>
+    <companyName></companyName>
+    <internalName>Arionum Miner</internalName>
+    <originalFilename>${project.name}.exe</originalFilename>
+    <trademarks></trademarks>
+    <language>ENGLISH_US</language>
+  </versionInfo>
+  <messages>
+    <startupErr>An error occurred while starting the application.</startupErr>
+    <bundledJreErr>This application was configured to use a bundled Java Runtime Environment but the runtime is missing or corrupted.</bundledJreErr>
+    <jreVersionErr>This application requires a Java 8 Runtime Environment</jreVersionErr>
+    <launcherErr>The registry refers to a nonexistent Java Runtime Environment installation or the runtime is corrupted.</launcherErr>
+    <instanceAlreadyExistsMsg>An application instance is already running.</instanceAlreadyExistsMsg>
+  </messages>
+						
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-antrun-plugin</artifactId>
 				<executions>
@@ -92,7 +153,7 @@
 						<configuration>
 							<tasks> <!-- We copy the .sh files with injection -->
 								<copy todir="./" overwrite="true">
-									<fileset dir="src/main/bin">
+									<fileset dir="src/main/bin/">
 										<filename name="*.sh" />
 									</fileset>
 									<filterset>
@@ -100,12 +161,33 @@
 									</filterset>
 								</copy>
 								<copy todir="./" overwrite="true">
-									<fileset dir="src/main/bin">
+									<fileset dir="src/main/bin/">
 										<filename name="*.bat" />
 									</fileset>
 									<filterset>
 										<filter token="batchJarName" value="${project.build.finalName}" />
 									</filterset>
+								</copy>
+							</tasks>
+						</configuration>
+					</execution>
+					<execution>
+						<id>Forward one-clicks</id>
+						<phase>package</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<tasks> <!-- We copy the .sh files with injection -->
+								<copy tofile="./${project.name}.jar" overwrite="true">
+									<fileset dir="target">
+										<filename name="${project.build.finalName}-shaded.jar" />
+									</fileset>
+								</copy>
+								<copy tofile="./${project.name}.exe" overwrite="true">
+									<fileset dir="target">
+										<filename name="arionum-java-miner-${project.version}.exe" />
+									</fileset>
 								</copy>
 							</tasks>
 						</configuration>

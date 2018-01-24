@@ -42,7 +42,7 @@ public abstract class Hasher implements Runnable{
 	public void run() {
 		try {
 			go();
-		} catch (Exception e) {
+		} catch (Throwable e) {
 			System.err.println("Detected thread " + Thread.currentThread().getName() + " death due to error: " + e.getMessage());
 			e.printStackTrace();
 			

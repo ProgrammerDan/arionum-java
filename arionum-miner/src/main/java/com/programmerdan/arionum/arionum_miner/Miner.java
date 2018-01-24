@@ -26,9 +26,18 @@ OR OTHER DEALINGS IN THE SOFTWARE.
  */
 package com.programmerdan.arionum.arionum_miner;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.math.BigInteger;
 import java.net.HttpURLConnection;
@@ -38,8 +47,10 @@ import java.net.URLEncoder;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Base64.Encoder;
+import java.util.Scanner;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -184,7 +195,155 @@ public class Miner implements UncaughtExceptionHandler {
 	protected final long wallClockBegin;
 	
 	public static void main(String[] args) {
-		Miner miner = new Miner(args);
+		Miner miner = null;
+		
+		try {
+			if (args == null || args.length == 0) {
+				args = new String[] {"config.cfg"};
+			}
+			// let's try to load a config file first.
+			if (args.length == 1) {
+				// config file?
+				ArrayList<String> lines = new ArrayList<>();
+				File config = new File(args[0]);
+				if (config.exists() && config.canRead()) {
+					System.out.println(" Attempting to open " + args[0] + " as a config file for arionum-java-miner");
+					
+					BufferedReader in = new BufferedReader(new FileReader(config));
+					String line = null;
+					while ((line = in.readLine()) != null) {
+						lines.add(line);
+					}
+					
+					miner = new Miner(lines.toArray(new String[] {}));
+				} else if (config.exists()) {
+					miner = new Miner(args); // will cause error, probably.
+				} else {
+					Scanner console = new Scanner(System.in);
+					System.out.print(" Would you like to generate a config and save it to " + args[0] + "? (y/N) ");
+					String input = console.nextLine();
+					
+					if ("y".equalsIgnoreCase(input)) {
+						System.out.print(" Choose type? (solo/pool) ");
+						String type = console.nextLine();
+						if ("solo".equalsIgnoreCase(type)) {
+							lines.add("solo");
+							
+							System.out.print(" Node to connect to? ");
+							lines.add(console.nextLine());
+
+							System.out.print(" Public key to use with node? ");
+							String address = console.nextLine();
+							lines.add(address);
+
+							System.out.print(" Private key to use with node? ");
+							String paddress = console.nextLine();
+							lines.add(paddress);
+							
+							int defaultHashers = (int) Math.ceil(Runtime.getRuntime().availableProcessors() / 4d);
+							System.out.print(" Simultaneous hashers to run? (you have " + Runtime.getRuntime().availableProcessors() + 
+									" cores, leave blank for default of " + defaultHashers + ") ");
+							String iterations = console.nextLine();
+							if (iterations == null || iterations.trim().isEmpty()) {
+								lines.add(String.valueOf(defaultHashers));
+							} else {
+								lines.add(iterations);
+							}
+							
+							System.out.print(" Core type? (stable/basic/debug/experimental - default stable) ");
+							String core = console.nextLine();
+							if (core == null || core.trim().isEmpty()) {
+								lines.add("stable");
+							} else {
+								lines.add(core);
+							}
+							
+							System.out.print(" Activate colors? (y/N) ");
+							
+							if ("y".equalsIgnoreCase(console.nextLine())) {
+								lines.add("true");
+							} else {
+								lines.add("false");
+							}
+						} else if ("pool".equalsIgnoreCase(type)) {
+							lines.add("pool");
+							
+							System.out.print(" Pool to connect to? (leave empty for http://aropool.com) ");
+							String pool = console.nextLine();
+							if (pool == null || pool.trim().isEmpty()) {
+								lines.add("http://aropool.com");
+							} else {
+								lines.add(pool);
+							}
+
+							System.out.print(" Wallet address to use to claim shares? ");
+							String address = console.nextLine();
+							lines.add(address);
+							
+							int defaultHashers = (int) Math.ceil(Runtime.getRuntime().availableProcessors() / 4d);
+							System.out.print(" Simultaneous hashers to run? (you have " + Runtime.getRuntime().availableProcessors() + 
+									" cores, leave blank for default of " + defaultHashers + ") ");
+							String iterations = console.nextLine();
+							if (iterations == null || iterations.trim().isEmpty()) {
+								lines.add(String.valueOf(defaultHashers));
+							} else {
+								lines.add(iterations);
+							}
+							
+							System.out.print(" Core type? (stable/basic/debug/experimental - default stable) ");
+							String core = console.nextLine();
+							if (core == null || core.trim().isEmpty()) {
+								lines.add("stable");
+							} else {
+								lines.add(core);
+							}
+							
+							System.out.print(" Activate colors? (y/N) ");
+							
+							if ("y".equalsIgnoreCase(console.nextLine())) {
+								lines.add("true");
+							} else {
+								lines.add("false");
+							}
+						} else if ("test".equalsIgnoreCase(type)) {
+							lines.add("test");
+							lines.add("http://aropool.com");
+							
+							System.out.print(" address to use in test run if needed by tests? ");
+							String address = console.nextLine();
+							lines.add(address);
+							
+							System.out.print(" iterations of tests to run? ");
+							String iterations = console.nextLine();
+							lines.add(iterations);
+						} else {
+							System.err.println("I don't recognize that type. Aborting!");
+							System.exit(1);
+						}
+
+						miner = new Miner(lines.toArray(new String[] {}));
+						
+						try (PrintWriter os = new PrintWriter(new FileWriter(config))) {
+							
+							for (String line : lines) {
+								os.println(line);
+							}
+							
+							os.flush();
+						} catch (IOException ie) {
+							System.err.println("Failed to save settings ... continuing. Check permissions? Error message: " + ie.getMessage());
+						}
+					}
+				}
+			} else {
+				miner = new Miner(args);
+			}
+
+		} catch (Exception e) {
+			System.err.println("Failed to initialize! Check config? Error message: " + e.getMessage());
+			e.printStackTrace();
+			System.exit(1);
+		}
 		Thread.setDefaultUncaughtExceptionHandler(miner);	
 		miner.start();
 	}
@@ -271,6 +430,15 @@ public class Miner implements UncaughtExceptionHandler {
 			} else if (MinerType.test.equals(this.type)) { // internal test mode, transient benchmarking.
 				this.maxHashers = args.length > 3 ? Integer.parseInt(args[3].trim()) : 1;
 			}
+			
+			System.out.println("Active config:");			
+			System.out.println("  type: " + this.type);
+			System.out.println("  node: " + this.node);
+			System.out.println("  public-key: " + this.publicKey);
+			System.out.println("  private-key: " + this.privateKey);
+			System.out.println("  hasher-count: " + this.maxHashers);
+			System.out.println("  hasher-mode: " + this.hasherMode);
+			System.out.println("  colors: " + this.colors);
 		} catch (Exception e) {
 			System.err.println("Invalid configuration: " + (e.getMessage()));
 			System.err.println("  type: " + this.type);
