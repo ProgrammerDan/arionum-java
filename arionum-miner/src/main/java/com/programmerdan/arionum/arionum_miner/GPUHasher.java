@@ -38,32 +38,15 @@ import de.mkammerer.argon2.Argon2Factory;
 import de.mkammerer.argon2.Argon2Factory.Argon2Types;
 
 /**
- * The intent for this hasher is deeper self-inspection of running times of various components.
- * It can be used as a testbed for comparative performance. It is not meant to be used for general use
- *
- * This particular experimental hasher takes advantage of an observation: namely, that 
- * we're doing double the randomness minimally necessary for the scheme, since the argon2i 
- * implementation here and in the php reference internally salts the "password" with 32 bytes of
- * random data. So the nonce itself can be considered just a payload, fixed entity, and allow the
- * salting of the argon2i to control uniformly random generation of SHA-512 DL outcomes.
- * 
- * This gives me 5-10% H/s speedups on isolated testing with no increase in rejections. Block
- * finds and shares remain as expected for H/s observed. 
- * 
- * Another indicator of improved performance is tracking reveals 99.97% of time is spent in argon2i 
- * codepath, vs. between 99.8 and 99.9% for other cores. This might sound small but adds up in a big way
- * over time, as its a per-hash improvement.
- * 
- * Once a nonce is submitted, it is discarded and a new one generated, as the pool does not allow 
- * resubmission of prior nonces.
+ * Proof of concept GPU miner. Once I figure out how.
  * 
  * 
  * @author ProgrammerDan (Daniel Boston)
  *
  */
-public class RawHasher extends Hasher {
+public class GPUHasher extends Hasher {
 
-	public RawHasher(Miner parent, String id) {
+	public GPUHasher(Miner parent, String id) {
 		super(parent, id);
 	}
 	

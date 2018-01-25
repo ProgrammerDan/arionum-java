@@ -791,74 +791,84 @@ public class Miner implements UncaughtExceptionHandler {
 	protected void submit(final String nonce, final String argon, final long submitDL) {
 		this.submitters.submit(new Runnable() {
 			public void run() {
-				long executionTimeTracker = System.currentTimeMillis();
 				
 				StringBuilder extra = new StringBuilder(node);
 				extra.append("/mine.php?q=submitNonce");
-				try {
-					URL url = new URL(extra.toString());
-					HttpURLConnection con = (HttpURLConnection) url.openConnection();
-					con.setRequestMethod("POST");
-					con.setRequestProperty("Content-type", "application/x-www-form-urlencoded");
-					con.setDoOutput(true);
-					DataOutputStream out = new DataOutputStream(con.getOutputStream());
-					
-					// TODO: make elegant.
-					StringBuilder data = new StringBuilder();
-					
-					// argon, just the hash bit since params are universal
-					data.append(URLEncoder.encode("argon", "UTF-8")).append("=")
-							.append(URLEncoder.encode(argon.substring(29), "UTF-8")).append("&");
-					// nonce
-					data.append(URLEncoder.encode("nonce", "UTF-8")).append("=")
-							.append(URLEncoder.encode(nonce, "UTF-8")).append("&");
-					// private key?
-					data.append(URLEncoder.encode("private_key", "UTF-8")).append("=")
-							.append(URLEncoder.encode(privateKey, "UTF-8")).append("&");
-					// public key
-					data.append(URLEncoder.encode("public_key", "UTF-8")).append("=")
-							.append(URLEncoder.encode(publicKey, "UTF-8")).append("&");
-					// address (which is prikey again?)
-					data.append(URLEncoder.encode("address", "UTF-8")).append("=")
-							.append(URLEncoder.encode(privateKey, "UTF-8"));
-					
-					out.writeBytes(data.toString());
-					
-					System.out.println("Submitting to " + node + " a " + submitDL + " DL nonce: " +  nonce + " argon: " + argon);
-					//System.out.println("Sending to " + extra.toString() + " Content:\n" + data.toString());
-					
-					out.flush();
-					out.close();
-					
-					sessionSubmits.incrementAndGet();
-					
-					int status = con.getResponseCode();
-					if (status != HttpURLConnection.HTTP_OK) {
-						System.out.println("Submit of " + nonce + " failure: " + con.getResponseMessage());
-						con.disconnect();
-						sessionRejects.incrementAndGet();
+				int failures = 0;
+				boolean notDone = true;
+				while (notDone) {
+					long executionTimeTracker = System.currentTimeMillis();
+					try {
+						URL url = new URL(extra.toString());
+						HttpURLConnection con = (HttpURLConnection) url.openConnection();
+						con.setRequestMethod("POST");
+						con.setRequestProperty("Content-type", "application/x-www-form-urlencoded");
+						con.setDoOutput(true);
+						DataOutputStream out = new DataOutputStream(con.getOutputStream());
+						
+						// TODO: make elegant.
+						StringBuilder data = new StringBuilder();
+						
+						// argon, just the hash bit since params are universal
+						data.append(URLEncoder.encode("argon", "UTF-8")).append("=")
+								.append(URLEncoder.encode(argon.substring(29), "UTF-8")).append("&");
+						// nonce
+						data.append(URLEncoder.encode("nonce", "UTF-8")).append("=")
+								.append(URLEncoder.encode(nonce, "UTF-8")).append("&");
+						// private key?
+						data.append(URLEncoder.encode("private_key", "UTF-8")).append("=")
+								.append(URLEncoder.encode(privateKey, "UTF-8")).append("&");
+						// public key
+						data.append(URLEncoder.encode("public_key", "UTF-8")).append("=")
+								.append(URLEncoder.encode(publicKey, "UTF-8")).append("&");
+						// address (which is prikey again?)
+						data.append(URLEncoder.encode("address", "UTF-8")).append("=")
+								.append(URLEncoder.encode(privateKey, "UTF-8"));
+						
+						out.writeBytes(data.toString());
+						
+						System.out.println("Submitting to " + node + " a " + submitDL + " DL nonce: " +  nonce + " argon: " + argon);
+						//System.out.println("Sending to " + extra.toString() + " Content:\n" + data.toString());
+						
+						out.flush();
+						out.close();
+						
+						sessionSubmits.incrementAndGet();
+						
+						int status = con.getResponseCode();
+						if (status != HttpURLConnection.HTTP_OK) {
+							System.out.println("Submit of " + nonce + " failure: " + con.getResponseMessage());
+							con.disconnect();
+							failures ++;
+							submitTime(System.currentTimeMillis() - executionTimeTracker);
+						} else {
+							long parseTimeTracker = System.currentTimeMillis();
+							
+							JSONObject obj = (JSONObject) (new JSONParser()).parse(new InputStreamReader(con.getInputStream()));
+		
+							if (!"ok".equals((String) obj.get("status"))) {
+								sessionRejects.incrementAndGet();
+								System.out.println("Submit of " + nonce + " rejected, nonce did not confirm: " + (String) obj.get("status"));
+							} else {
+								System.out.println("Submit of " + nonce + " confirmed!");
+							}
+							notDone = false;
+							
+							con.disconnect();
+		
+							submitTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
+						}
+					} catch (IOException | ParseException ioe) {
+						failures ++;
+						System.err.println("Non-fatal but tragic: Failed during construction or receipt of submission: " + ioe.getMessage());
 						submitTime(System.currentTimeMillis() - executionTimeTracker);
-						return;
 					}
-					
-					long parseTimeTracker = System.currentTimeMillis();
-					
-					JSONObject obj = (JSONObject) (new JSONParser()).parse(new InputStreamReader(con.getInputStream()));
-
-					if (!"ok".equals((String) obj.get("status"))) {
-						sessionRejects.incrementAndGet();
-						System.out.println("Submit of " + nonce + " rejected, nonce did not confirm: " + (String) obj.get("status"));
-					} else {
-						System.out.println("Submit of " + nonce + " confirmed!");
+					if (failures > 5) {
+						notDone = false;
+						System.err.println("After more then five failed attempts to submit this nonce, we are giving up.");
 					}
-					
-					con.disconnect();
-
-					submitTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
-				} catch (IOException | ParseException ioe) {
-					System.err.println("Non-fatal but tragic: Failed during construction or receipt of submission: " + ioe.getMessage());
-					submitTime(System.currentTimeMillis() - executionTimeTracker);
 				}
+					
 			}
 		});
 	}
