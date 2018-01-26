@@ -49,6 +49,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Random;
 import java.util.Base64.Encoder;
 import java.util.Scanner;
 import java.util.TreeSet;
@@ -69,6 +70,9 @@ import org.json.simple.parser.ParseException;
 import de.mkammerer.argon2.Argon2;
 import de.mkammerer.argon2.Argon2Factory;
 import de.mkammerer.argon2.Argon2Factory.Argon2Types;
+import de.mkammerer.argon2.jna.Argon2Library;
+import de.mkammerer.argon2.jna.JnaUint32;
+import de.mkammerer.argon2.jna.Size_t;
 
 /**
  * Miner. Functional equiv of arionum-miner.
@@ -1104,7 +1108,164 @@ public class Miner implements UncaughtExceptionHandler {
 		
 		System.out.println("stripFunction Iterations: " + this.maxHashers + " a: " + a + " b: " + b + " c: " + c + " d: " + d);*/
 		
+		final JnaUint32 iterations = new JnaUint32(4);
+		final JnaUint32 memory= new JnaUint32(16384);
+		final JnaUint32 parallelism = new JnaUint32(4);
+		final JnaUint32 saltLenI = new JnaUint32(16);
+		final JnaUint32 hashLenI = new JnaUint32(32);
+		final Size_t saltLen = new Size_t(16l);
+		final Size_t hashLen = new Size_t(32l);
+		
+		final Size_t encLen = Argon2Library.INSTANCE.argon2_encodedlen(iterations, memory, parallelism,
+                saltLenI, hashLenI, Argon2Types.ARGON2i.getJnaType());
+        final byte[] encoded = new byte[encLen.intValue()];
+        byte[] salt = new byte[saltLen.intValue()];
+
+        // warmup the cpu
+		for (int i = 0; i < this.maxHashers*100; i++) {
+			new Random().nextBytes(salt);
+		}
+        
+        new Random().nextBytes(salt);
+    	byte[] hashBaseBuffer = "thisisahashofatypicalsizebutwouldntyouknowititshardtothinkofsillystufftotypetotestasystemlikethissinceweassumethingsworkmostofthetimevenwhenwehavenoreasontothinkthatbuttestingiscritical".getBytes();
+    	Size_t hashBaseBufferSize = new Size_t(hashBaseBuffer.length);
+        
+    	difficulty = new BigInteger("100000000");
+    	
+    	long rawtime = 0l;
+    	long nortime = 0l;
+    	long cpytime = 0l;
+    	long trntime = 0l;
+    	long shatime = 0l;
+    	long dltime = 0l;
+    	
+    	Argon2Library argon2lib = Argon2Library.INSTANCE;
+    	Argon2 argon2 = Argon2Factory.create(Argon2Types.ARGON2i);
+    	MessageDigest sha512 = null;
+		try {
+			sha512 = MessageDigest.getInstance("SHA-512");
+		} catch (NoSuchAlgorithmException e1) {
+			System.err.println("Unable to find SHA-512 algorithm! Fatal error.");
+			e1.printStackTrace();
+			System.exit(1);
+			active = false;
+		}
+    	
+    	for (int j = 0; j < 10;j ++) {
+	    	long hashS = System.nanoTime();
+			
+			for (int i = 0; i < this.maxHashers/10; i++) {
+				argon2lib.argon2i_hash_encoded(
+		                iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize,
+		                salt, saltLen, hashLen, encoded, encLen
+		        );
+			}
+			
+			long hashE = System.nanoTime();
+			
+			//System.out.println(String.format("rawlib %dns ea.", ((hashE - hashS) / (this.maxHashers/1))));
+			rawtime += (hashE - hashS);
+			
+			hashS = System.nanoTime();
+			
+			for (int i = 0; i < this.maxHashers/10; i++) {
+				argon2.hash(4, 16384, 4, hashBaseBuffer.toString());
+			}
+			
+			hashE = System.nanoTime();
+			
+			//System.out.println(String.format("norlib %dns ea.", ((hashE - hashS) / ( this.maxHashers/10))));
+			nortime += (hashE - hashS);
+			
+			int offset = hashBaseBuffer.length - encoded.length;
+			
+			hashS = System.nanoTime();
+			
+			for (int i = 0 ; i < this.maxHashers*100; i++) {
+				System.arraycopy(encoded, 0, hashBaseBuffer, offset, encLen.intValue());
+			}
+			
+			hashE = System.nanoTime();
+			
+			cpytime += (hashE - hashS);
+			
+			StringBuilder hashBase = null;
+			String base;
+			byte[] byteBase = new byte[60];
+			hashS = System.nanoTime();
+			for (int i = 0; i < this.maxHashers*100; i++) {
+				hashBase = new StringBuilder(hashBaseBuffer.length + encoded.length); // size of key + none + difficult + argon + data + spacers
+				hashBase.append(new String(hashBaseBuffer));
+				hashBase.append(new String(encoded));
+				base = hashBase.toString();
+				byteBase = base.getBytes();
+			}
+			hashE = System.nanoTime();
+			
+			trntime += (hashE - hashS);
+			
+			hashBaseBuffer = "thisisahashofatypicalsizebutwouldntyouknowititshardtothinkofsillystufftotypetotestasystemlikethissinceweassumethingsworkmostofthetimevenwhenwehavenoreasontothinkthatbuttestingiscritical".getBytes();
+			
+			hashS = System.nanoTime();
+			for (int i = 0; i < this.maxHashers/10; i++) {
+				byteBase = sha512.digest(hashBaseBuffer);
+				for (int q = 0; i < 5; i++) {
+					byteBase = sha512.digest(byteBase);
+				}
+			}
+			hashE = System.nanoTime();
+			shatime += (hashE - hashS);
+			
+			hashS = System.nanoTime();
+			for (int i = 0; i < this.maxHashers*100; i++) {
+				StringBuilder duration = new StringBuilder(25);
+				duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
+						.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
+						.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
+	
+				long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
+			}
+			hashE = System.nanoTime();
+			
+			dltime += (hashE - hashS);
+			
+			System.out.println("Round " + j);
+    	}
+    	
+		System.out.println(String.format("rawlib %dns ea.", (rawtime / this.maxHashers)));
+		System.out.println(String.format("norlib %dns ea.", (nortime / this.maxHashers)));
+		System.out.println(String.format("arraycpy %dns ea.", (cpytime / (this.maxHashers * 1000))));
+		System.out.println(String.format("stringtr %dns ea.", (trntime / (this.maxHashers * 1000))));
+		System.out.println(String.format("shalib %dns ea.", (shatime / this.maxHashers)));
+		System.out.println(String.format("dlcomp %dns ea.", (dltime / (this.maxHashers * 1000))));
+		System.exit(0);
+		
 		SecureRandom random = new SecureRandom();
+		Random insRandom = new Random(random.nextLong());
+		
+		byte[] sale = new byte[16];
+		
+		long saltS = System.nanoTime();
+		
+		for (int i = 0; i < this.maxHashers; i++) {
+			random.nextBytes(sale);
+		}
+		
+		long saltE = System.nanoTime();
+		
+		System.out.println(String.format("Secure %dns ea.", ((saltE - saltS) / this.maxHashers)));
+		
+		
+		saltS = System.nanoTime();
+		
+		for (int i = 0; i < this.maxHashers; i++) {
+			insRandom.nextBytes(sale);
+		}
+		
+		saltE = System.nanoTime();
+		
+		System.out.println(String.format("Insecure %dns ea.", ((saltE - saltS) / this.maxHashers)));
+			
 		Encoder encoder = Base64.getEncoder();
 		String rawHashBase;
 		byte[] nonce = new byte[32];
@@ -1142,17 +1303,8 @@ public class Miner implements UncaughtExceptionHandler {
 		System.out.println("rawNonce: " + rawNonce + " \nrawHashBase: " + rawHashBase);
 		
 		String argon = null;
-		Argon2 argon2 = Argon2Factory.create(Argon2Types.ARGON2i);
+		argon2 = Argon2Factory.create(Argon2Types.ARGON2i);
 
-		MessageDigest sha512 = null;
-		try {
-			sha512 = MessageDigest.getInstance("SHA-512");
-		} catch (NoSuchAlgorithmException e1) {
-			System.err.println("Unable to find SHA-512 algorithm! Fatal error.");
-			e1.printStackTrace();
-			System.exit(1);
-			active = false;
-		}
 		
 		byte[] byteBase = null;
 		long[][] findBuckets = new long[8][256];

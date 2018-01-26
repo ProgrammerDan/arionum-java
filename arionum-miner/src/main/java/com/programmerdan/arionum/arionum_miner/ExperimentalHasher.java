@@ -76,14 +76,15 @@ public class ExperimentalHasher extends Hasher {
 	private final Size_t hashLen = new Size_t(32l);
 	private final Size_t encLen;
 	private final byte[] encoded;
+	private final Argon2Library argonlib;
 	
 	public ExperimentalHasher(Miner parent, String id) {
 		super(parent, id);
 
 		
 		// SET UP ARGON FOR DIRECT-TO-JNA-WRAPPER-EXEC
-				
-		encLen = Argon2Library.INSTANCE.argon2_encodedlen(iterations, memory, parallelism,
+		argonlib = Argon2Library.INSTANCE;
+		encLen = argonlib.argon2_encodedlen(iterations, memory, parallelism,
                 saltLenI, hashLenI, Argon2Types.ARGON2i.getJnaType());
         encoded = new byte[encLen.intValue()];
 	}
@@ -150,12 +151,7 @@ public class ExperimentalHasher extends Hasher {
 		active = true;
 		long start = System.currentTimeMillis();
 
-		//StringBuilder hashBase = null;
 		byte[] byteBase = null;
-		
-		//String argon = null;
-		//Argon2 argon2 = Argon2Factory.create(Argon2Types.ARGON2i);
-
 		
 		MessageDigest sha512 = null;
 		try {
@@ -182,25 +178,23 @@ public class ExperimentalHasher extends Hasher {
 			statCycle = System.currentTimeMillis();
 			statBegin = System.nanoTime();
 			try {
-				//hashBase = new StringBuilder(this.hashBufferSize);
-				insRandom.nextBytes(salt);
+				insRandom.nextBytes(salt); //47 ns
 				
 				statArgonBegin = System.nanoTime();
 
-				Argon2Library.INSTANCE.argon2i_hash_encoded(
+				argonlib.argon2i_hash_encoded(
 		                iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize,
 		                salt, saltLen, hashLen, encoded, encLen
-		        );
-				//argon = argon2.hash(4, 16384, 4, rawHashBase);
+		        ); //refactor saves like 30,000-200,000 ns per hash // 34.2 ms -- 34,200,000 ns
 				statArgonEnd = System.nanoTime();
-				System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue());
-				//hashBase.append(rawHashBase).append(argon);
+				
+				System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue()); //10-20ns (vs. 1200ns of strings in StableHasher)
 
-				//byteBase = hashBase.toString().getBytes();
 				byteBase = sha512.digest(fullHashBaseBuffer);
 				for (int i = 0; i < 5; i++) {
 					byteBase = sha512.digest(byteBase);
 				}
+				// shas total 4900-5000ns for all 6 digests, or < 1000ns ea
 				
 				StringBuilder duration = new StringBuilder(25);
 				duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
@@ -208,6 +202,8 @@ public class ExperimentalHasher extends Hasher {
 						.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
 
 				long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
+				//385 ns for duration
+				
 				if (finalDuration > 0 && finalDuration <= this.limit) {
 					//System.out.println("Data: " + new String(fullHashBaseBuffer));
 					//System.out.println("Found: " + rawNonce + " : " + new String(encoded) + " " + finalDuration);
