@@ -816,51 +816,55 @@ public class Miner implements UncaughtExceptionHandler {
 	 */
 	protected void refreshFromWorkers() {
 		//long wallTime = System.currentTimeMillis() - lastWorkerReport;
-		AtomicLong newRate = new AtomicLong();
-		workers.forEach(this.maxHashers,  (workerId, hasher) -> {
-			long allHashes = hasher.getHashes();
-			workerHashes.get(workerId).set(allHashes);
-			
-			long rateHashes = hasher.getHashesRecentExp();
-			long recentHashes = hasher.getHashesRecent();
-			workerRateHashes.get(workerId).set(rateHashes);
-			currentHashes.getAndAdd(recentHashes);
-			hashes.getAndAdd(recentHashes);
-			
-			long localDL = hasher.getBestDL();
-			bestDL.getAndUpdate((dl) -> {if (localDL < dl) return localDL; else return dl;});
-			workerRoundBestDL.get(workerId).set(localDL);
-			
-			// shares are nonces < difficulty > 0 and >= 240
-			workerBlockShares.get(workerId).set(hasher.getShares());
-			// finds are nonces < 240 (block discovery)
-			workerBlockFinds.get(workerId).set(hasher.getFinds());
-			
-			long argonTime = hasher.getArgonTimeExp();
-			workerArgonTime.get(workerId).set(argonTime);
-			
-			long nonArgonTime = hasher.getNonArgonTimeExp();
-			workerNonArgonTime.get(workerId).set(nonArgonTime);
-			if (argonTime > 0) {
-				workerLastRatio.put(workerId, (double) argonTime / ((double) argonTime + nonArgonTime));
-			}
-			
-			long seconds = (argonTime + nonArgonTime) / 1000000000l;
-			double rate = (double) rateHashes / ((double) seconds);
-			workerRate.put(workerId, rate);
-			workerAvgRate.put(workerId, (double) allHashes / ((double) (System.currentTimeMillis() - wallClockBegin) / 1000l) );
-
-			long localMilliseconds = hasher.getLoopTime();
-			workerCoreEfficiency.put(workerId, (((double) localMilliseconds)
-					/ ((double) (System.currentTimeMillis() - workerLastReport.get(workerId).getAndSet(System.currentTimeMillis()) ))));
-			
-			workerClockTime.get(workerId).addAndGet( localMilliseconds );
-			
-			hasher.clearTimers();
-			
-			newRate.addAndGet((long) (rate * 10000d));
-		});
-		this.lastSpeed.set(newRate.get());
+		try {
+			AtomicLong newRate = new AtomicLong();
+			workers.forEach(this.maxHashers,  (workerId, hasher) -> {
+				long allHashes = hasher.getHashes();
+				workerHashes.get(workerId).set(allHashes);
+				
+				long rateHashes = hasher.getHashesRecentExp();
+				long recentHashes = hasher.getHashesRecent();
+				workerRateHashes.get(workerId).set(rateHashes);
+				currentHashes.getAndAdd(recentHashes);
+				hashes.getAndAdd(recentHashes);
+				
+				long localDL = hasher.getBestDL();
+				bestDL.getAndUpdate((dl) -> {if (localDL < dl) return localDL; else return dl;});
+				workerRoundBestDL.get(workerId).set(localDL);
+				
+				// shares are nonces < difficulty > 0 and >= 240
+				workerBlockShares.get(workerId).set(hasher.getShares());
+				// finds are nonces < 240 (block discovery)
+				workerBlockFinds.get(workerId).set(hasher.getFinds());
+				
+				long argonTime = hasher.getArgonTimeExp();
+				workerArgonTime.get(workerId).set(argonTime);
+				
+				long nonArgonTime = hasher.getNonArgonTimeExp();
+				workerNonArgonTime.get(workerId).set(nonArgonTime);
+				if (argonTime > 0) {
+					workerLastRatio.put(workerId, (double) argonTime / ((double) argonTime + nonArgonTime));
+				}
+				
+				long seconds = (argonTime + nonArgonTime) / 1000000000l;
+				double rate = (double) rateHashes / ((double) seconds);
+				workerRate.put(workerId, rate);
+				workerAvgRate.put(workerId, (double) allHashes / ((double) (System.currentTimeMillis() - wallClockBegin) / 1000l) );
+	
+				long localMilliseconds = hasher.getLoopTime();
+				workerCoreEfficiency.put(workerId, (((double) localMilliseconds)
+						/ ((double) (System.currentTimeMillis() - workerLastReport.get(workerId).getAndSet(System.currentTimeMillis()) ))));
+				
+				workerClockTime.get(workerId).addAndGet( localMilliseconds );
+				
+				hasher.clearTimers();
+				
+				newRate.addAndGet((long) (rate * 10000d));
+			});
+			this.lastSpeed.set(newRate.get());
+		} catch (Exception e) {
+			System.err.println("There was an issue getting stats from the workers. I'll try again in a bit...: " + e.getMessage());
+		}
 	}
 	
 	private void printWorkerStats() {
