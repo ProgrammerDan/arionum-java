@@ -139,8 +139,8 @@ public class ExperimentalHasher extends Hasher {
 		hashBaseBuffer = rawHashBase.getBytes();
 		hashBaseBufferSize = new Size_t(hashBaseBuffer.length);
 		fullHashBaseBuffer = new byte[hashBaseBuffer.length + encLen.intValue()];
-		System.out.println("hashBaseBuffer len: " + hashBaseBuffer.length);
-		System.out.println("fullHashBaseBuffer len: " + fullHashBaseBuffer.length);
+		//System.out.println("hashBaseBuffer len: " + hashBaseBuffer.length);
+		//System.out.println("fullHashBaseBuffer len: " + fullHashBaseBuffer.length);
 		System.arraycopy(hashBaseBuffer, 0, fullHashBaseBuffer, 0, hashBaseBuffer.length);
 	}
 	

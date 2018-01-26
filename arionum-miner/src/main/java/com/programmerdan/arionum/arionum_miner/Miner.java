@@ -699,11 +699,13 @@ public class Miner implements UncaughtExceptionHandler {
 			}
 			
 			if (!AdvMode.auto.equals(this.hasherMode) && this.hasherCount.get() < maxHashers) {
-				String workerId = php_uniqid();
-				Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId);
-				updateWorker(hasher);
-				this.hashers.submit(hasher);
-				addWorker(workerId, hasher);
+				while (this.workers.size() < maxHashers) {
+					String workerId = php_uniqid();
+					Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId);
+					updateWorker(hasher);
+					this.hashers.submit(hasher);
+					addWorker(workerId, hasher);
+				}
 			} else if (AdvMode.auto.equals(this.hasherMode)) { // auto adjust! 
 				Profile newActiveProfile = activeProfile;
 				
