@@ -27,8 +27,21 @@ OR OTHER DEALINGS IN THE SOFTWARE.
 package com.programmerdan.arionum.arionum_miner;
 
 public enum AdvMode {
-	basic,
-	debug,
-	experimental,
-	stable
+	basic(true),
+	debug(false),
+	experimental(true),
+	stable(true),
+	auto(false),
+	gpu(true),
+	mixed(false);
+	
+	boolean use;
+	
+	AdvMode(boolean use) {
+		this.use = use;
+	}
+	
+	public boolean useThis() {
+		return use;
+	}
 }

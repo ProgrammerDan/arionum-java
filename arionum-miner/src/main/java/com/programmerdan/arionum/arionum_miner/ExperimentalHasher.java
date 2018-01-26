@@ -32,10 +32,14 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Base64.Encoder;
+import java.util.Random;
 
 import de.mkammerer.argon2.Argon2;
 import de.mkammerer.argon2.Argon2Factory;
 import de.mkammerer.argon2.Argon2Factory.Argon2Types;
+import de.mkammerer.argon2.jna.Argon2Library;
+import de.mkammerer.argon2.jna.JnaUint32;
+import de.mkammerer.argon2.jna.Size_t;
 
 /**
  * The intent for this hasher is deeper self-inspection of running times of various components.
@@ -63,15 +67,37 @@ import de.mkammerer.argon2.Argon2Factory.Argon2Types;
  */
 public class ExperimentalHasher extends Hasher {
 
+	private final JnaUint32 iterations = new JnaUint32(4);
+	private final JnaUint32 memory= new JnaUint32(16384);
+	private final JnaUint32 parallelism = new JnaUint32(4);
+	private final JnaUint32 saltLenI = new JnaUint32(16);
+	private final JnaUint32 hashLenI = new JnaUint32(32);
+	private final Size_t saltLen = new Size_t(16l);
+	private final Size_t hashLen = new Size_t(32l);
+	private final Size_t encLen;
+	private final byte[] encoded;
+	
 	public ExperimentalHasher(Miner parent, String id) {
 		super(parent, id);
+
+		
+		// SET UP ARGON FOR DIRECT-TO-JNA-WRAPPER-EXEC
+				
+		encLen = Argon2Library.INSTANCE.argon2_encodedlen(iterations, memory, parallelism,
+                saltLenI, hashLenI, Argon2Types.ARGON2i.getJnaType());
+        encoded = new byte[encLen.intValue()];
 	}
 	
 	private SecureRandom random = new SecureRandom();
+	private Random insRandom = new Random(random.nextLong());
 	private Encoder encoder = Base64.getEncoder();
 	private String rawHashBase;
 	private byte[] nonce = new byte[32];
+	private byte[] salt = new byte[16];
 	private String rawNonce;
+	private byte[] hashBaseBuffer;
+	private Size_t hashBaseBufferSize;
+	private byte[] fullHashBaseBuffer;
 	
 	@Override
 	public void update(BigInteger difficulty, String data, long limit, String publicKey) {
@@ -83,6 +109,7 @@ public class ExperimentalHasher extends Hasher {
 	/**
 	 */
 	private void genNonce() {
+		insRandom = new Random(random.nextLong());
 		String encNonce = null;
 		StringBuilder hashBase;
 		random.nextBytes(nonce);
@@ -104,9 +131,16 @@ public class ExperimentalHasher extends Hasher {
 		hashBase.append(nonceSb).append("-");
 		hashBase.append(this.data).append("-");
 		hashBase.append(this.difficultyString);
-		
+
 		rawNonce = nonceSb.toString();
 		rawHashBase = hashBase.toString();
+
+		hashBaseBuffer = rawHashBase.getBytes();
+		hashBaseBufferSize = new Size_t(hashBaseBuffer.length);
+		fullHashBaseBuffer = new byte[hashBaseBuffer.length + encLen.intValue()];
+		System.out.println("hashBaseBuffer len: " + hashBaseBuffer.length);
+		System.out.println("fullHashBaseBuffer len: " + fullHashBaseBuffer.length);
+		System.arraycopy(hashBaseBuffer, 0, fullHashBaseBuffer, 0, hashBaseBuffer.length);
 	}
 	
 	
@@ -116,12 +150,13 @@ public class ExperimentalHasher extends Hasher {
 		active = true;
 		long start = System.currentTimeMillis();
 
-		StringBuilder hashBase = null;
+		//StringBuilder hashBase = null;
 		byte[] byteBase = null;
 		
-		String argon = null;
-		Argon2 argon2 = Argon2Factory.create(Argon2Types.ARGON2i);
+		//String argon = null;
+		//Argon2 argon2 = Argon2Factory.create(Argon2Types.ARGON2i);
 
+		
 		MessageDigest sha512 = null;
 		try {
 			sha512 = MessageDigest.getInstance("SHA-512");
@@ -147,18 +182,26 @@ public class ExperimentalHasher extends Hasher {
 			statCycle = System.currentTimeMillis();
 			statBegin = System.nanoTime();
 			try {
-				hashBase = new StringBuilder(this.hashBufferSize);
+				//hashBase = new StringBuilder(this.hashBufferSize);
+				insRandom.nextBytes(salt);
+				
 				statArgonBegin = System.nanoTime();
-				argon = argon2.hash(4, 16384, 4, rawHashBase);
-				statArgonEnd = System.nanoTime();
-				hashBase.append(rawHashBase).append(argon);
 
-				byteBase = hashBase.toString().getBytes();
+				Argon2Library.INSTANCE.argon2i_hash_encoded(
+		                iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize,
+		                salt, saltLen, hashLen, encoded, encLen
+		        );
+				//argon = argon2.hash(4, 16384, 4, rawHashBase);
+				statArgonEnd = System.nanoTime();
+				System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue());
+				//hashBase.append(rawHashBase).append(argon);
+
+				//byteBase = hashBase.toString().getBytes();
+				byteBase = sha512.digest(fullHashBaseBuffer);
 				for (int i = 0; i < 5; i++) {
 					byteBase = sha512.digest(byteBase);
 				}
-				byteBase = sha512.digest(byteBase);
-
+				
 				StringBuilder duration = new StringBuilder(25);
 				duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
 						.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
@@ -166,7 +209,9 @@ public class ExperimentalHasher extends Hasher {
 
 				long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
 				if (finalDuration > 0 && finalDuration <= this.limit) {
-					parent.submit(rawNonce, argon, finalDuration);
+					//System.out.println("Data: " + new String(fullHashBaseBuffer));
+					//System.out.println("Found: " + rawNonce + " : " + new String(encoded) + " " + finalDuration);
+					parent.submit(rawNonce, new String(encoded), finalDuration);
 					if (finalDuration <= 240) {
 						finds++;
 					} else {

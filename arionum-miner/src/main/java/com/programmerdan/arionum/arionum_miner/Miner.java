@@ -51,8 +51,10 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Base64.Encoder;
 import java.util.Scanner;
+import java.util.TreeSet;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -194,6 +196,22 @@ public class Miner implements UncaughtExceptionHandler {
 
 	protected final long wallClockBegin;
 	
+	
+	/* AUTO BOT MODE */
+	private Profile activeProfile;
+	private TreeSet<Profile> evaluatedProfiles;
+	private ConcurrentLinkedQueue<Profile> profilesToEvaluate;
+	private int coreCap;
+	private long nextProfileSwap;
+	private long profilesTested;
+	
+	protected static final long TEST_PERIOD = 270000; // 4.5 minutes
+	protected static final long INIT_DELAY = 30000; // .5 minutes
+	
+	/* Future todo: reassess periodically */
+	private long nextReassess;
+	private Profile toReassess;
+	
 	public static void main(String[] args) {
 		Miner miner = null;
 		
@@ -240,22 +258,30 @@ public class Miner implements UncaughtExceptionHandler {
 							String paddress = console.nextLine();
 							lines.add(paddress);
 							
-							int defaultHashers = (int) Math.ceil(Runtime.getRuntime().availableProcessors() / 4d);
-							System.out.print(" Simultaneous hashers to run? (you have " + Runtime.getRuntime().availableProcessors() + 
-									" cores, leave blank for default of " + defaultHashers + ") ");
-							String iterations = console.nextLine();
-							if (iterations == null || iterations.trim().isEmpty()) {
-								lines.add(String.valueOf(defaultHashers));
-							} else {
-								lines.add(iterations);
-							}
+							System.out.println(" Would you like autotuning to occur? This will try to maximize your H/s ");
+							System.out.println("   over the course of many minutes by adjusting hashers and cores. (y/N)");
 							
-							System.out.print(" Core type? (stable/basic/debug/experimental - default stable) ");
-							String core = console.nextLine();
-							if (core == null || core.trim().isEmpty()) {
-								lines.add("stable");
+							if ("y".equalsIgnoreCase(console.nextLine())) {
+								lines.add("-1");
+								lines.add("auto");
 							} else {
-								lines.add(core);
+								int defaultHashers = (int) Math.ceil(Runtime.getRuntime().availableProcessors() / 4d);
+								System.out.print(" Simultaneous hashers to run? (you have " + Runtime.getRuntime().availableProcessors() + 
+										" cores, leave blank for default of " + defaultHashers + ") ");
+								String iterations = console.nextLine();
+								if (iterations == null || iterations.trim().isEmpty()) {
+									lines.add(String.valueOf(defaultHashers));
+								} else {
+									lines.add(iterations);
+								}
+								
+								System.out.print(" Core type? (stable/basic/debug/experimental - default stable) ");
+								String core = console.nextLine();
+								if (core == null || core.trim().isEmpty()) {
+									lines.add("stable");
+								} else {
+									lines.add(core);
+								}
 							}
 							
 							System.out.print(" Activate colors? (y/N) ");
@@ -280,24 +306,31 @@ public class Miner implements UncaughtExceptionHandler {
 							String address = console.nextLine();
 							lines.add(address);
 							
-							int defaultHashers = (int) Math.ceil(Runtime.getRuntime().availableProcessors() / 4d);
-							System.out.print(" Simultaneous hashers to run? (you have " + Runtime.getRuntime().availableProcessors() + 
-									" cores, leave blank for default of " + defaultHashers + ") ");
-							String iterations = console.nextLine();
-							if (iterations == null || iterations.trim().isEmpty()) {
-								lines.add(String.valueOf(defaultHashers));
-							} else {
-								lines.add(iterations);
-							}
+							System.out.println(" Would you like autotuning to occur? This will try to maximize your H/s ");
+							System.out.println("   over the course of many minutes by adjusting hashers and cores. (y/N)");
 							
-							System.out.print(" Core type? (stable/basic/debug/experimental - default stable) ");
-							String core = console.nextLine();
-							if (core == null || core.trim().isEmpty()) {
-								lines.add("stable");
+							if ("y".equalsIgnoreCase(console.nextLine())) {
+								lines.add("-1");
+								lines.add("auto");
 							} else {
-								lines.add(core);
+								int defaultHashers = (int) Math.ceil(Runtime.getRuntime().availableProcessors() / 4d);
+								System.out.print(" Simultaneous hashers to run? (you have " + Runtime.getRuntime().availableProcessors() + 
+										" cores, leave blank for default of " + defaultHashers + ") ");
+								String iterations = console.nextLine();
+								if (iterations == null || iterations.trim().isEmpty()) {
+									lines.add(String.valueOf(defaultHashers));
+								} else {
+									lines.add(iterations);
+								}
+								
+								System.out.print(" Core type? (stable/basic/debug/experimental - default stable) ");
+								String core = console.nextLine();
+								if (core == null || core.trim().isEmpty()) {
+									lines.add("stable");
+								} else {
+									lines.add(core);
+								}
 							}
-							
 							System.out.print(" Activate colors? (y/N) ");
 							
 							if ("y".equalsIgnoreCase(console.nextLine())) {
@@ -383,6 +416,16 @@ public class Miner implements UncaughtExceptionHandler {
 		
 		/*end stats*/
 		
+		/* autotune */
+		activeProfile = null;
+		TreeSet<Profile> evaluatedProfiles = new TreeSet<Profile>();
+		ConcurrentLinkedQueue<Profile> profilesToEvaluate = new ConcurrentLinkedQueue<Profile>();
+		int coreCap = Runtime.getRuntime().availableProcessors();
+		long nextProfileSwap = 0;
+		long profilesTested = 0;
+
+		/* end autotune */
+		
 		this.hashes = new AtomicLong();
 		this.currentHashes = new AtomicLong();
 		this.bestDL = new AtomicLong(Long.MAX_VALUE);
@@ -431,6 +474,10 @@ public class Miner implements UncaughtExceptionHandler {
 				this.maxHashers = args.length > 3 ? Integer.parseInt(args[3].trim()) : 1;
 			}
 			
+			if (AdvMode.auto.equals(this.hasherMode)) {
+				this.maxHashers = -1;
+			}
+			
 			System.out.println("Active config:");			
 			System.out.println("  type: " + this.type);
 			System.out.println("  node: " + this.node);
@@ -454,7 +501,7 @@ public class Miner implements UncaughtExceptionHandler {
 			System.err.println("  java -jar arionum-miner.jar solo node-address pubKey priKey [#hashers] [basic|debug|experimental] [true|false]");
 			System.err.println(" where:");
 			System.err.println("   [#hashers] is # of hashers to spin up. Default 1.");
-			System.err.println("   [stable|basic|debug|experimental] is type of hasher to run -- stable is always stable, basic is php ref, debug is chatty, and experimental has no guarantees but is usually faster. Default stable.");
+			System.err.println("   [stable|basic|debug|experimental|auto] is type of hasher to run -- stable is always stable, basic is php ref, debug is chatty, experimental has no guarantees but is usually faster. Auto lets java miner pick best config. Default stable.");
 			System.err.println("   [true|false] is if colored output is enabled -- does not work on Windows systems unless in Cygwin bash shell. Default false.");
 					
 			System.exit(1);
@@ -463,7 +510,8 @@ public class Miner implements UncaughtExceptionHandler {
 		System.out.println("You have " + Runtime.getRuntime().availableProcessors() + " processors vs. " + this.maxHashers + " hashers. ");
 		
 
-		this.hashers = Executors.newFixedThreadPool(this.maxHashers, Executors.privilegedThreadFactory());
+		this.hashers = Executors.newFixedThreadPool(this.maxHashers > 0 ? this.maxHashers : Runtime.getRuntime().availableProcessors(),
+				Executors.privilegedThreadFactory());
 		
 		this.limit = 240; // default
 		this.worker = php_uniqid();
@@ -485,6 +533,19 @@ public class Miner implements UncaughtExceptionHandler {
 			}
 		}
 		// end commit e14b696362fb
+		
+		if (AdvMode.auto.equals(this.hasherMode)) {
+			// BOOTSTRAP
+			for (AdvMode mode: AdvMode.values()) {
+				if (mode.useThis()) {
+					Profile execProfile = new Profile(mode);
+					this.profilesToEvaluate.offer(execProfile);
+				}
+			}
+			nextProfileSwap = System.currentTimeMillis();
+			activeProfile = null;
+			profilesTested = 0;
+		}
 		
 		active = true;
 		this.lastUpdate = wallClockBegin;
@@ -633,12 +694,40 @@ public class Miner implements UncaughtExceptionHandler {
 				}
 			}
 			
-			if (this.hasherCount.get() < maxHashers) {
+			if (!AdvMode.auto.equals(this.hasherMode) && this.hasherCount.get() < maxHashers) {
 				String workerId = php_uniqid();
 				Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId);
 				updateWorker(hasher);
 				this.hashers.submit(hasher);
 				addWorker(workerId, hasher);
+			} else if (AdvMode.auto.equals(this.hasherMode)) { // auto adjust! 
+				Profile newActiveProfile = activeProfile;
+				
+				// Check, have we any profile active? If not, pick a bootstrap profile.
+				if (activeProfile == null) {
+					newActiveProfile = profilesToEvaluate.poll();
+				// Now check, are we done profiling out current profile?
+				} else if (Profile.Status.DONE.equals(activeProfile.getStatus())) {
+					// We are done, do we have any left to check?
+					if (profilesToEvaluate.isEmpty()) {
+						// check how it stacks up; if this profile is highest, check if we have more profiling work to do.
+						// Otherwise, if not highest, switch to best.
+						evaluatedProfiles.add(activeProfile);
+						newActiveProfile = evaluatedProfiles.pollLast();
+					// We do have more to check! Let's lodge what we learned and switch profiles.
+					} else {
+						evaluatedProfiles.add(activeProfile);
+						newActiveProfile = profilesToEvaluate.poll();
+					}
+				}
+				
+				if (activeProfile == null || !newActiveProfile.equals(activeProfile)) {
+					System.out.println("About to evaluate profile " + newActiveProfile.toString());
+					
+					// reconfigure!
+					
+					activeProfile = newActiveProfile;
+				}
 			}
 			
 			try {
@@ -786,6 +875,9 @@ public class Miner implements UncaughtExceptionHandler {
 					System.out.println(workerString.toString());
 			}
 		});
+		if (AdvMode.auto.equals(this.hasherMode)) {
+			System.out.println("In auto-adjust mode. Next readjustment in " + "" + "s.");
+		}
 	}
 	
 	protected void submit(final String nonce, final String argon, final long submitDL) {
