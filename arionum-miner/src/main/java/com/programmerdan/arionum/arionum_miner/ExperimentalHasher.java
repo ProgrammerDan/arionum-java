@@ -151,7 +151,7 @@ public class ExperimentalHasher extends Hasher {
 	public void go() {
 		active = true;
 		long start = System.currentTimeMillis();
-		try (AffinityLock al = AffinityLock.acquireLock((int) (1L << this.parent.hasherCount.getAndIncrement()) ) ) {
+		try (AffinityLock al = AffinityLock.acquireCore()) {//.acquireLock((int) this.parent.hasherCount.getAndIncrement() ) ) {
 			byte[] byteBase = null;
 			
 			MessageDigest sha512 = null;
@@ -183,10 +183,12 @@ public class ExperimentalHasher extends Hasher {
 					
 					statArgonBegin = System.nanoTime();
 	
-					argonlib.argon2i_hash_encoded(
-			                iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize,
-			                salt, saltLen, hashLen, encoded, encLen
-			        ); //refactor saves like 30,000-200,000 ns per hash // 34.2 ms -- 34,200,000 ns
+					try (AffinityLock al2 = al.acquireLock(AffinityStrategies.SAME_SOCKET, AffinityStrategies.ANY)) {
+						argonlib.argon2i_hash_encoded(
+				                iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize,
+				                salt, saltLen, hashLen, encoded, encLen
+				        ); //refactor saves like 30,000-200,000 ns per hash // 34.2 ms -- 34,200,000 ns
+					}
 					statArgonEnd = System.nanoTime();
 					
 					System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue()); //10-20ns (vs. 1200ns of strings in StableHasher)
