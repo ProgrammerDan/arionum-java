@@ -1156,7 +1156,14 @@ public class Miner implements UncaughtExceptionHandler {
 			System.exit(1);
 			active = false;
 		}
-    	
+
+		argon2.hash(4, 16384, 4, hashBaseBuffer.toString());
+
+		argon2lib.argon2i_hash_encoded(
+                iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize,
+                salt, saltLen, hashLen, encoded, encLen
+        );
+
     	for (int j = 0; j < 10;j ++) {
 	    	long hashS = System.nanoTime();
 			
@@ -1169,6 +1176,7 @@ public class Miner implements UncaughtExceptionHandler {
 			
 			long hashE = System.nanoTime();
 			
+			System.out.print( (hashE - hashS) );
 			//System.out.println(String.format("rawlib %dns ea.", ((hashE - hashS) / (this.maxHashers/1))));
 			rawtime += (hashE - hashS);
 			
@@ -1179,6 +1187,8 @@ public class Miner implements UncaughtExceptionHandler {
 			}
 			
 			hashE = System.nanoTime();
+			
+			System.out.print( " " +  (hashE - hashS) );
 			
 			//System.out.println(String.format("norlib %dns ea.", ((hashE - hashS) / ( this.maxHashers/10))));
 			nortime += (hashE - hashS);
