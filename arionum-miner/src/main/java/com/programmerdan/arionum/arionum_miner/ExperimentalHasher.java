@@ -40,6 +40,8 @@ import de.mkammerer.argon2.Argon2Factory.Argon2Types;
 import de.mkammerer.argon2.jna.Argon2Library;
 import de.mkammerer.argon2.jna.JnaUint32;
 import de.mkammerer.argon2.jna.Size_t;
+import net.openhft.affinity.AffinityLock;
+import net.openhft.affinity.AffinityStrategies;
 
 /**
  * The intent for this hasher is deeper self-inspection of running times of various components.
@@ -147,100 +149,100 @@ public class ExperimentalHasher extends Hasher {
 	
 	@Override
 	public void go() {
-		this.parent.hasherCount.incrementAndGet();
 		active = true;
 		long start = System.currentTimeMillis();
-
-		byte[] byteBase = null;
-		
-		MessageDigest sha512 = null;
-		try {
-			sha512 = MessageDigest.getInstance("SHA-512");
-		} catch (NoSuchAlgorithmException e1) {
-			System.err.println("Unable to find SHA-512 algorithm! Fatal error.");
-			e1.printStackTrace();
-			System.exit(1);
-			active = false;
-		}
-		if (active) {
-			parent.workerInit(id);
-			System.out.println(id + "] Spun up EXPERIMENTAL hashing worker in " + (System.currentTimeMillis() - start) + "ms");
-		}
-		
-		long statCycle = 0l;
-		long statBegin = 0l;
-		long statArgonBegin = 0l;
-		long statArgonEnd = 0l;
-		long statEnd = 0l;
-		long stuck = 0;
-		
-		while (active) {
-			statCycle = System.currentTimeMillis();
-			statBegin = System.nanoTime();
+		try (AffinityLock al = AffinityLock.acquireLock((int) (1L << this.parent.hasherCount.getAndIncrement()) ) ) {
+			byte[] byteBase = null;
+			
+			MessageDigest sha512 = null;
 			try {
-				insRandom.nextBytes(salt); //47 ns
-				
-				statArgonBegin = System.nanoTime();
-
-				argonlib.argon2i_hash_encoded(
-		                iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize,
-		                salt, saltLen, hashLen, encoded, encLen
-		        ); //refactor saves like 30,000-200,000 ns per hash // 34.2 ms -- 34,200,000 ns
-				statArgonEnd = System.nanoTime();
-				
-				System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue()); //10-20ns (vs. 1200ns of strings in StableHasher)
-
-				byteBase = sha512.digest(fullHashBaseBuffer);
-				for (int i = 0; i < 5; i++) {
-					byteBase = sha512.digest(byteBase);
-				}
-				// shas total 4900-5000ns for all 6 digests, or < 1000ns ea
-				
-				StringBuilder duration = new StringBuilder(25);
-				duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
-						.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
-						.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
-
-				long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
-				//385 ns for duration
-				
-				if (finalDuration > 0 && finalDuration <= this.limit) {
-					//System.out.println("Data: " + new String(fullHashBaseBuffer));
-					//System.out.println("Found: " + rawNonce + " : " + new String(encoded) + " " + finalDuration);
-					parent.submit(rawNonce, new String(encoded), finalDuration);
-					if (finalDuration <= 240) {
-						finds++;
-					} else {
-						shares++;
-					}
-					genNonce(); // only gen a new nonce once we exhaust the one we had
-				}
-				
-				hashCount++;
-				hashesRecent++;
-				statEnd = System.nanoTime();
-				
-				if (finalDuration < this.bestDL) { // split the difference; if we're not getting movement after a while, just move on
-					this.bestDL = finalDuration;
-					stuck = 0;
-				} else {
-					stuck++;
-					if (priorHashesRecent > 0 && stuck > priorHashesRecent * 15) {
-						genNonce();
-						stuck = 0;
-					}
-				}
-				
-				//System.out.println("\033[1A\033[2K" + finalDuration);
-				
-				this.argonTime += statArgonEnd - statArgonBegin;
-				this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
-			} catch (Exception e) {
-				System.err.println(id + "] This worker failed somehow. Killing it.");
-				e.printStackTrace();
+				sha512 = MessageDigest.getInstance("SHA-512");
+			} catch (NoSuchAlgorithmException e1) {
+				System.err.println("Unable to find SHA-512 algorithm! Fatal error.");
+				e1.printStackTrace();
+				System.exit(1);
 				active = false;
 			}
-			this.loopTime += System.currentTimeMillis() - statCycle;
+			if (active) {
+				parent.workerInit(id);
+				System.out.println(id + "] Spun up EXPERIMENTAL hashing worker in " + (System.currentTimeMillis() - start) + "ms");
+			}
+			
+			long statCycle = 0l;
+			long statBegin = 0l;
+			long statArgonBegin = 0l;
+			long statArgonEnd = 0l;
+			long statEnd = 0l;
+			long stuck = 0;
+			
+			while (active) {
+				statCycle = System.currentTimeMillis();
+				statBegin = System.nanoTime();
+				try {
+					insRandom.nextBytes(salt); //47 ns
+					
+					statArgonBegin = System.nanoTime();
+	
+					argonlib.argon2i_hash_encoded(
+			                iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize,
+			                salt, saltLen, hashLen, encoded, encLen
+			        ); //refactor saves like 30,000-200,000 ns per hash // 34.2 ms -- 34,200,000 ns
+					statArgonEnd = System.nanoTime();
+					
+					System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue()); //10-20ns (vs. 1200ns of strings in StableHasher)
+	
+					byteBase = sha512.digest(fullHashBaseBuffer);
+					for (int i = 0; i < 5; i++) {
+						byteBase = sha512.digest(byteBase);
+					}
+					// shas total 4900-5000ns for all 6 digests, or < 1000ns ea
+					
+					StringBuilder duration = new StringBuilder(25);
+					duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
+							.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
+							.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
+	
+					long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
+					//385 ns for duration
+					
+					if (finalDuration > 0 && finalDuration <= this.limit) {
+						//System.out.println("Data: " + new String(fullHashBaseBuffer));
+						//System.out.println("Found: " + rawNonce + " : " + new String(encoded) + " " + finalDuration);
+						parent.submit(rawNonce, new String(encoded), finalDuration);
+						if (finalDuration <= 240) {
+							finds++;
+						} else {
+							shares++;
+						}
+						genNonce(); // only gen a new nonce once we exhaust the one we had
+					}
+					
+					hashCount++;
+					hashesRecent++;
+					statEnd = System.nanoTime();
+					
+					if (finalDuration < this.bestDL) { // split the difference; if we're not getting movement after a while, just move on
+						this.bestDL = finalDuration;
+						stuck = 0;
+					} else {
+						stuck++;
+						if (priorHashesRecent > 0 && stuck > priorHashesRecent * 15) {
+							genNonce();
+							stuck = 0;
+						}
+					}
+					
+					//System.out.println("\033[1A\033[2K" + finalDuration);
+					
+					this.argonTime += statArgonEnd - statArgonBegin;
+					this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
+				} catch (Exception e) {
+					System.err.println(id + "] This worker failed somehow. Killing it.");
+					e.printStackTrace();
+					active = false;
+				}
+				this.loopTime += System.currentTimeMillis() - statCycle;
+			}
 		}
 		System.out.println(id + "] This worker is now inactive.");
 		this.parent.hasherCount.decrementAndGet();

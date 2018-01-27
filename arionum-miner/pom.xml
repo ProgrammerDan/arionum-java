@@ -219,6 +219,11 @@
 			<artifactId>json-simple</artifactId>
 			<version>1.1.1</version>
 		</dependency>
+		<dependency>
+			<groupId>net.openhft</groupId>
+			<artifactId>affinity</artifactId>
+			<version>3.1.7</version>
+		</dependency>
 	</dependencies>
 	<description>A full featured java implementation of the arionum miner Portions derived from the php reference miner.</description>
 </project>
