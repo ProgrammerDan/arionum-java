@@ -74,6 +74,7 @@ import de.mkammerer.argon2.jna.Argon2Library;
 import de.mkammerer.argon2.jna.JnaUint32;
 import de.mkammerer.argon2.jna.Size_t;
 
+import net.openhft.affinity.AffinityLock;
 /**
  * Miner. Functional equiv of arionum-miner.
  *
@@ -562,7 +563,7 @@ public class Miner implements UncaughtExceptionHandler {
 			Future<Boolean> update = this.updaters.submit(new Callable<Boolean>() {
 				public Boolean call() {
 					long executionTimeTracker = System.currentTimeMillis();
-					try {
+					try { //( AffinityLock af = AffinityLock.acquireLock() ) {
 						if (cycles > 0 && (System.currentTimeMillis() - lastUpdate) < (UPDATING_DELAY * .5)) {
 							skips++;
 							return Boolean.FALSE;
@@ -681,7 +682,7 @@ public class Miner implements UncaughtExceptionHandler {
 					}
 				}
 			});
-			
+			//try { //(AffinityLock al = AffinityLock.acquireLock() ) {
 			if (firstRun) { // Failures after initial are probably just temporary so we ignore them.
 				try {
 					if (update.get().booleanValue()) {
@@ -735,6 +736,7 @@ public class Miner implements UncaughtExceptionHandler {
 					activeProfile = newActiveProfile;
 				}
 			}
+			//}
 			
 			try {
 				Thread.sleep(UPDATING_DELAY);
@@ -1165,7 +1167,20 @@ public class Miner implements UncaughtExceptionHandler {
         );
 
     	for (int j = 0; j < 10;j ++) {
-	    	long hashS = System.nanoTime();
+			
+		long 	hashS = System.nanoTime();
+			
+			for (int i = 0; i < this.maxHashers/10; i++) {
+				argon2.hash(4, 16384, 4, hashBaseBuffer.toString());
+			}
+			
+			long 	hashE = System.nanoTime();
+			
+			System.out.print( " " +  (hashE - hashS) );
+			//System.out.println(String.format("norlib %dns ea.", ((hashE - hashS) / ( this.maxHashers/10))));
+			nortime += (hashE - hashS);
+			
+	    	hashS = System.nanoTime();
 			
 			for (int i = 0; i < this.maxHashers/10; i++) {
 				argon2lib.argon2i_hash_encoded(
@@ -1174,24 +1189,11 @@ public class Miner implements UncaughtExceptionHandler {
 		        );
 			}
 			
-			long hashE = System.nanoTime();
+		hashE = System.nanoTime();
 			
-			System.out.print( (hashE - hashS) );
+			System.out.print( " " + (hashE - hashS) );
 			//System.out.println(String.format("rawlib %dns ea.", ((hashE - hashS) / (this.maxHashers/1))));
 			rawtime += (hashE - hashS);
-			
-			hashS = System.nanoTime();
-			
-			for (int i = 0; i < this.maxHashers/10; i++) {
-				argon2.hash(4, 16384, 4, hashBaseBuffer.toString());
-			}
-			
-			hashE = System.nanoTime();
-			
-			System.out.print( " " +  (hashE - hashS) );
-			
-			//System.out.println(String.format("norlib %dns ea.", ((hashE - hashS) / ( this.maxHashers/10))));
-			nortime += (hashE - hashS);
 			
 			int offset = hashBaseBuffer.length - encoded.length;
 			

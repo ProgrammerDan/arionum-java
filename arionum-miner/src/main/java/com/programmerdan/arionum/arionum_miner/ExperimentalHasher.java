@@ -151,7 +151,7 @@ public class ExperimentalHasher extends Hasher {
 	public void go() {
 		active = true;
 		long start = System.currentTimeMillis();
-		try (AffinityLock al = AffinityLock.acquireCore()) {//.acquireLock((int) this.parent.hasherCount.getAndIncrement() ) ) {
+		//try { //(AffinityLock al = AffinityLock.acquireCore()) {//.acquireLock((int) this.parent.hasherCount.getAndIncrement() ) ) {
 			byte[] byteBase = null;
 			
 			MessageDigest sha512 = null;
@@ -174,6 +174,8 @@ public class ExperimentalHasher extends Hasher {
 			long statArgonEnd = 0l;
 			long statEnd = 0l;
 			long stuck = 0;
+
+			int forgive = 0;
 			
 			while (active) {
 				statCycle = System.currentTimeMillis();
@@ -183,12 +185,13 @@ public class ExperimentalHasher extends Hasher {
 					
 					statArgonBegin = System.nanoTime();
 	
-					try (AffinityLock al2 = al.acquireLock(AffinityStrategies.SAME_SOCKET, AffinityStrategies.ANY)) {
+					//try { //(AffinityLock al2 = al.acquireLock(AffinityStrategies.SAME_SOCKET, AffinityStrategies.ANY)) {
+
 						argonlib.argon2i_hash_encoded(
 				                iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize,
 				                salt, saltLen, hashLen, encoded, encLen
 				        ); //refactor saves like 30,000-200,000 ns per hash // 34.2 ms -- 34,200,000 ns
-					}
+					//}
 					statArgonEnd = System.nanoTime();
 					
 					System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue()); //10-20ns (vs. 1200ns of strings in StableHasher)
@@ -238,6 +241,13 @@ public class ExperimentalHasher extends Hasher {
 					
 					this.argonTime += statArgonEnd - statArgonBegin;
 					this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
+
+					forgive++;
+					if (forgive == 25) {
+						forgive =0;
+						Thread.sleep(0);
+						System.out.println(id + "] " + hashCount);
+					}
 				} catch (Exception e) {
 					System.err.println(id + "] This worker failed somehow. Killing it.");
 					e.printStackTrace();
@@ -245,7 +255,7 @@ public class ExperimentalHasher extends Hasher {
 				}
 				this.loopTime += System.currentTimeMillis() - statCycle;
 			}
-		}
+		//}
 		System.out.println(id + "] This worker is now inactive.");
 		this.parent.hasherCount.decrementAndGet();
 	}
