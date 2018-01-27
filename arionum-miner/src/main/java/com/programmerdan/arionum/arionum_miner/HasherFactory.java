@@ -34,18 +34,13 @@ package com.programmerdan.arionum.arionum_miner;
  */
 public class HasherFactory {
 
-	public static Hasher createHasher(AdvMode mode, Miner parent, String id) {
+	public static Hasher createHasher(AdvMode mode, Miner parent, String id, long lifeTime) {
 		switch(mode) {
-		case basic:
-			return new BasicHasher(parent, id);
-		case debug:
-			return new DebugHasher(parent, id);
-		case stable:
-			return new StableHasher(parent, id);
-		case experimental:
-			return new ExperimentalHasher(parent, id);
+		case standard:
+			return new ExperimentalHasher(parent, id, lifeTime);
+		case gpu:
 		default:
-			return new StableHasher(parent, id);
+			return new ExperimentalHasher(parent, id, lifeTime);
 		}
 	}
 }

@@ -41,6 +41,7 @@ public abstract class Hasher implements Runnable{
 
 	public void run() {
 		try {
+			active = true;
 			go();
 		} catch (Throwable e) {
 			System.err.println("Detected thread " + Thread.currentThread().getName() + " death due to error: " + e.getMessage());
@@ -59,6 +60,10 @@ public abstract class Hasher implements Runnable{
 	protected boolean active;
 	protected String id;
 	protected long hashCount;
+	protected long targetHashCount;
+	protected long hashBegin;
+	protected long hashEnd;
+	protected long hashTime;
 	
 	// local copy of data, updated "off thread"
 	protected BigInteger difficulty;
@@ -84,6 +89,17 @@ public abstract class Hasher implements Runnable{
 	protected long priorNonArgonTime;
 	protected long priorHashesRecent;
 	
+
+	public Hasher(Miner parent, String id, long target) {
+		super();
+		this.parent = parent;
+		this.id = id;
+		this.active = false;
+		this.hashCount = 0l;
+		this.targetHashCount = target;
+	}
+	
+	
 	public long getBestDL() {
 		return bestDL;
 	}
@@ -106,6 +122,10 @@ public abstract class Hasher implements Runnable{
 	
 	public long getLoopTime() {
 		return loopTime;
+	}
+	
+	public long getHashTime() {
+		return this.hashTime;
 	}
 	
 	public long getHashesRecent() {
@@ -147,14 +167,6 @@ public abstract class Hasher implements Runnable{
 		this.hashBufferSize = 280 + this.data.length();
 		this.limit = limit;
 		this.publicKey = publicKey;
-	}
-
-	public Hasher(Miner parent, String id) {
-		super();
-		this.parent = parent;
-		this.id = id;
-		this.active = false;
-		this.hashCount = 0l;
 	}
 
 	public long getHashes() {

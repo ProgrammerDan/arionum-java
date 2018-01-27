@@ -27,10 +27,7 @@ OR OTHER DEALINGS IN THE SOFTWARE.
 package com.programmerdan.arionum.arionum_miner;
 
 public enum AdvMode {
-	basic(true),
-	debug(false),
-	experimental(true),
-	stable(true),
+	standard(true),
 	auto(false),
 	gpu(true),
 	mixed(false);

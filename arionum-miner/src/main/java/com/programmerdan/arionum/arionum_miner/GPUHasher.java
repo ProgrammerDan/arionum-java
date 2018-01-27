@@ -46,8 +46,8 @@ import de.mkammerer.argon2.Argon2Factory.Argon2Types;
  */
 public class GPUHasher extends Hasher {
 
-	public GPUHasher(Miner parent, String id) {
-		super(parent, id);
+	public GPUHasher(Miner parent, String id, long target) {
+		super(parent, id, target);
 	}
 	
 	private SecureRandom random = new SecureRandom();
