@@ -454,6 +454,9 @@ public class Miner implements UncaughtExceptionHandler {
 		this.workers = new ConcurrentHashMap<String, Hasher>();
 		
 		this.recentWorkers = new ConcurrentSkipListSet<>();
+		
+		this.blockFinds = new AtomicLong();
+		this.blockShares = new AtomicLong();
 	
 		/*stats*/
 		this.workerHashes = new ConcurrentHashMap<String, AtomicLong>();
