@@ -27,16 +27,12 @@ OR OTHER DEALINGS IN THE SOFTWARE.
 package com.programmerdan.arionum.arionum_miner;
 
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.DataOutputStream;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.math.BigInteger;
@@ -136,7 +132,12 @@ public class Miner implements UncaughtExceptionHandler {
 	/**
 	 * The session length is the target parameter generally tuned against 
 	 */
-	private double sessionLength = 0.0d;
+	private double sessionLength = 5000.0d;
+	
+	/**
+	 * Last time we checked with workers
+	 */
+	private long lastWorkerReport;
 	
 	
 	/**
@@ -160,6 +161,9 @@ public class Miner implements UncaughtExceptionHandler {
 	 * Count of submits rejected (orphan, or old data hashes)
 	 */
 	protected final AtomicLong sessionRejects;
+
+	protected final AtomicLong blockShares;
+	protected final AtomicLong blockFinds;
 	
 	/**
 	 * Let's thread off updating. We'll just hash constantly, and offload updating like submitting.
@@ -188,6 +192,7 @@ public class Miner implements UncaughtExceptionHandler {
 	
 	/* Update related */
 	private AtomicLong lastSpeed;
+	private AtomicLong speedAccrue;
 	private long lastUpdate;
 	private long lastReport; 
 	private int cycles;
@@ -493,6 +498,7 @@ public class Miner implements UncaughtExceptionHandler {
 		this.sessionSubmits = new AtomicLong();
 		this.sessionRejects = new AtomicLong();
 		this.lastSpeed = new AtomicLong();
+		this.speedAccrue = new AtomicLong();
 		
 		this.updateTimeAvg = new AtomicLong();
 		this.updateTimeMax = new AtomicLong(Long.MIN_VALUE);
@@ -707,8 +713,13 @@ public class Miner implements UncaughtExceptionHandler {
 							lastReport = System.currentTimeMillis();
 							System.out.print("MinDL: " + limit + " \n  Total Hashes: " + hashes.get() + "H  Overall Avg Speed: " + avgSpeed(wallClockBegin) + "H/s  Last Reported Speed: " + cummSpeed
 									+ "H/s\n  Updates last " + (sinceLastReport / 1000) + "s: " + updates + " Skipped: " + skips + " Failed: " + failures
-									+ (updates > 0 ? "\n  Updates took avg: " + (updateTimeAvg.getAndSet(0) / (updates+failures)) + "ms  max: " + (updateTimeMax.getAndSet(Long.MIN_VALUE)) + "ms  min: " + (updateTimeMin.getAndSet(Long.MAX_VALUE)) + "ms": "")
-									+ (updates > 0 ? "\n  Parsing updates took avg: " + (updateParseTimeAvg.getAndSet(0) / (updates+failures)) + "ms  max: " + (updateParseTimeMax.getAndSet(Long.MIN_VALUE)) + "ms  min: " + (updateParseTimeMin.getAndSet(Long.MAX_VALUE)) + "ms": "")
+ 									+ (updates > 0 ? "\n  Updates took avg: " + (updateTimeAvg.getAndSet(0) / (updates+failures)) + "ms  max: " + (updateTimeMax.getAndSet(Long.MIN_VALUE)) + "ms  min: " + (updateTimeMin.getAndSet(Long.MAX_VALUE)) + "ms": "")
+ 									+ (sessionSubmits.get() > 0 ? "\n Found " + sessionSubmits.get() + " nonces, " + sessionRejects.get() + " rejected"
+ 												+ "\n  Submits took avg: " + (submitTimeAvg.get() / (sessionSubmits.get()+sessionRejects.get())) 
+ 												+ "ms  max: " + (submitTimeMax.get()) + "ms  min: " + (submitTimeMin.get())
+ 												+ "\n  Parsing submits replies took avg: " + (submitParseTimeAvg.get() / (sessionSubmits.get()+sessionRejects.get())) 
+ 												+ "ms  max: " + (submitParseTimeMax.get()) + "ms  min: " + (submitParseTimeMin.get()) : "")
+  									+ (updates > 0 ? "\n  Parsing updates took avg: " + (updateParseTimeAvg.getAndSet(0) / (updates+failures)) + "ms  max: " + (updateParseTimeMax.getAndSet(Long.MIN_VALUE)) + "ms  min: " + (updateParseTimeMin.getAndSet(Long.MAX_VALUE)) + "ms": "")
 									+ "\n  Time since last block update: " + ((System.currentTimeMillis() - lastBlockUpdate) / 1000) + "s"
 									+ " Best DL so far: " + bestDL.get() + "\n  Total time mining this session: " + ((System.currentTimeMillis() - wallClockBegin)/1000l) + "s");
 							skips = 0;
@@ -752,16 +763,15 @@ public class Miner implements UncaughtExceptionHandler {
 						break;
 					}
 				}
+				lastWorkerReport = System.currentTimeMillis();
 			}
 			
 			if (!AdvMode.auto.equals(this.hasherMode) && this.hasherCount.get() < maxHashers) {
-				//while (this.workers.size() < maxHashers) {
-					String workerId = php_uniqid();
-					Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession);
-					updateWorker(hasher);
-					this.hashers.submit(hasher);
-					addWorker(workerId, hasher);
-				//}
+				String workerId = php_uniqid();
+				Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession);
+				updateWorker(hasher);
+				this.hashers.submit(hasher);
+				addWorker(workerId, hasher);
 			} else if (AdvMode.auto.equals(this.hasherMode)) { // auto adjust! 
 				Profile newActiveProfile = activeProfile;
 				
@@ -802,13 +812,6 @@ public class Miner implements UncaughtExceptionHandler {
 			}
 			
 			if (cycles == 30) {
-				if (sessionSubmits.get() > 0) {
-					System.out.println("So far, found " + sessionSubmits.get() + " nonces, " + sessionRejects.get() + " rejected"
-							+ "\n  Submits took avg: " + (submitTimeAvg.get() / (sessionSubmits.get()+sessionRejects.get())) 
-							+ "ms  max: " + (submitTimeMax.get()) + "ms  min: " + (submitTimeMin.get())
-							+ "\n  Parsing submits replies took avg: " + (submitParseTimeAvg.get() / (sessionSubmits.get()+sessionRejects.get())) 
-							+ "ms  max: " + (submitParseTimeMax.get()) + "ms  min: " + (submitParseTimeMin.get()));
-				}
 				cycles = 0;
 			}
 			
@@ -868,25 +871,36 @@ public class Miner implements UncaughtExceptionHandler {
 		workerLastReport.put(workerId, new AtomicLong(System.currentTimeMillis()));
 	}
 	
+	protected void workerFinish(Hasher worker) {
+		// TODO do stuff with outgoing worker
+		
+		String workerId = php_uniqid();
+		Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession);
+		updateWorker(hasher);
+		this.hashers.submit(hasher);
+		addWorker(workerId, hasher);		
+	}
+	
 	/**
 	 * Periodically we ask for updated information from all workers.
 	 */
 	protected void refreshFromWorkers() {
-		//long wallTime = System.currentTimeMillis() - lastWorkerReport;
+		long wallTime = System.currentTimeMillis() - lastWorkerReport;
+		lastWorkerReport = System.currentTimeMillis();
 		try {
-			AtomicLong newRate = new AtomicLong();
+			AtomicLong newHashes = new AtomicLong();
+			AtomicLong adjust = new AtomicLong();
+			AtomicLong offload = new AtomicLong();
 			workers.forEach(4,  (workerId, hasher) -> {
 				if (hasher.isActive()) return;
-				System.err.println("Pulling stats from finished worker " + workerId );
+				//System.err.println("Pulling stats from finished worker " + workerId );
 				try {
 					long allHashes = hasher.getHashes();
-					workerHashes.get(workerId).set(allHashes);
+					workerHashes.get(workerId).set(allHashes); // need this?
+					newHashes.addAndGet(allHashes);
 					
-					long rateHashes = hasher.getHashesRecentExp();
-					long recentHashes = hasher.getHashesRecent();
-					workerRateHashes.get(workerId).set(rateHashes);
-					currentHashes.getAndAdd(recentHashes);
-					hashes.getAndAdd(recentHashes);
+					currentHashes.getAndAdd(allHashes); // need this?
+					hashes.getAndAdd(allHashes);
 					
 					long localDL = hasher.getBestDL();
 					bestDL.getAndUpdate((dl) -> {if (localDL < dl) return localDL; else return dl;});
@@ -894,8 +908,10 @@ public class Miner implements UncaughtExceptionHandler {
 					
 					// shares are nonces < difficulty > 0 and >= 240
 					workerBlockShares.get(workerId).set(hasher.getShares());
+					blockShares.addAndGet(hasher.getShares());
 					// finds are nonces < 240 (block discovery)
 					workerBlockFinds.get(workerId).set(hasher.getFinds());
+					blockFinds.addAndGet(hasher.getFinds());
 					
 					long argonTime = hasher.getArgonTimeExp();
 					workerArgonTime.get(workerId).set(argonTime);
@@ -906,26 +922,46 @@ public class Miner implements UncaughtExceptionHandler {
 						workerLastRatio.put(workerId, (double) argonTime / ((double) argonTime + nonArgonTime));
 					}
 					
-					long seconds = (argonTime + nonArgonTime) / 1000000000l;
-					double rate = (double) rateHashes / ((double) seconds);
-					workerRate.put(workerId, rate);
-					workerAvgRate.put(workerId, (double) allHashes / ((double) (hasher.getHashTime()) / 1000l) );
-		
-					long localMilliseconds = hasher.getLoopTime();
-					workerCoreEfficiency.put(workerId, (((double) localMilliseconds)
-							/ ((double) (System.currentTimeMillis() - workerLastReport.get(workerId).getAndSet(System.currentTimeMillis()) ))));
+					long totalTime = hasher.getHashTime();
 					
-					workerClockTime.get(workerId).addAndGet( localMilliseconds );
+					long seconds = (argonTime + nonArgonTime) / 1000000000l;
+					double rate = (double) allHashes / ((double) seconds);
+					
+					workerRate.put(workerId, rate);
+					workerAvgRate.put(workerId, (double) allHashes / ((double) (totalTime / 1000l)) );
+		
+					workerCoreEfficiency.put(workerId, (((double) seconds * 1000d) / ((double) totalTime)));
 					
 					hasher.clearTimers();
 					
-					newRate.addAndGet((long) (rate * 10000d));
 					recentWorkers.add(workerId);
+					
+					if (totalTime < this.sessionLength) {
+						double gap = (this.sessionLength - totalTime) / this.sessionLength;
+						long recom = (long) (((double)allHashes) * .5 * gap);
+						
+						adjust.addAndGet(recom);
+						offload.incrementAndGet();
+					} else if (totalTime > this.sessionLength) {
+						double gap = (totalTime - this.sessionLength) / (double) totalTime;
+						long recom = (long) -(( (double) allHashes) * .5 * gap);
+						
+						adjust.addAndGet(recom);
+						offload.incrementAndGet();
+					} else {
+						offload.incrementAndGet();
+					}
+					
 				} catch (Throwable e) {
 					System.err.println("Pulling stats from finished worker " + workerId + " failed! Message: " + e.getMessage());
 				}
 			});
-			this.lastSpeed.set(newRate.get());
+			if (offload.get() > 0) {
+				this.hashesPerSession += (long) (adjust.doubleValue() / offload.doubleValue());
+			}
+			this.lastSpeed.addAndGet( (long) (((newHashes.doubleValue() * 10000000d) / (double) (wallTime))));
+			this.speedAccrue.incrementAndGet();
+			
 			workers.values().removeIf(e -> !e.isActive()); // remove once we are done with it.
 		} catch (Exception e) {
 			System.err.println("There was an issue getting stats from the workers. I'll try again in a bit...: " + e.getMessage());
@@ -933,28 +969,33 @@ public class Miner implements UncaughtExceptionHandler {
 	}
 	
 	private void printWorkerStats() {
-		System.out.println(String.format("  %13s %12s %7s %8s %7s %8s %7s %7s %5s %12s", "Worker ID", "Hashes", "Avg H/s", "TiC%", "Cur H/s", "Cur TiC%", "Argon %", "Shares", "Finds", "Block BestDL"));
-		recentWorkers.forEach((workerId) -> {
-			try {
-				long dl = workerRoundBestDL.get(workerId).longValue();
-				if (dl < Long.MAX_VALUE) {
-					StringBuilder workerString = new StringBuilder(69);
-					workerString.append("  ").append(workerId).append(" ")
-						.append(String.format("%12d ", workerHashes.get(workerId).get()))
-						.append(String.format("%7.2f ", workerAvgRate.get(workerId)))
-						.append(String.format("%8.2f ", (workerClockTime.get(workerId).doubleValue() / (double) (System.currentTimeMillis() - wallClockBegin)) * 100d))
-						.append(String.format("%7.2f ", workerRate.get(workerId)))
-						.append(String.format("%8.2f ", workerCoreEfficiency.get(workerId) * 100d))
-						.append(String.format("%7.3f ", workerLastRatio.get(workerId) * 100d))
-						.append(String.format("%7d ", workerBlockShares.get(workerId).get()))
-						.append(String.format("%5d ", workerBlockFinds.get(workerId).get()))
-						.append(String.format("%12d", dl));
-						System.out.println(workerString.toString());
-				}
-			} catch (Throwable e) {
-				// no-op.
+		System.out.println(String.format(" %7s %5s %5s %7s %8s %8s %7s %5s %12s", "Streams", "Runs", "H/run", "Cur H/s", "Cur TiC%", "Argon %", "Shares", "Finds", "Block BestDL"));
+		int recentSize = recentWorkers.size();
+		double avgRate = 0.0d;
+		double coreEff = 0.0d;
+		double argEff = 0.0d;
+		long shares = this.blockShares.get();
+		long finds = this.blockFinds.get();
+		long dls = Long.MAX_VALUE;
+		
+		for (int i = 0; i < recentSize; i++) {
+			String workerId = recentWorkers.pollFirst();
+			avgRate += workerAvgRate.get(workerId).doubleValue();
+			coreEff += workerCoreEfficiency.get(workerId).doubleValue() * 100d;
+			argEff += workerLastRatio.get(workerId).doubleValue() * 100d;
+
+			long dl = workerRoundBestDL.get(workerId).longValue();
+			if (dl < dls) {
+				dls = dl;
 			}
-		});
+		}
+		System.out.println(String.format(" %7d %5d %5d %7.2f %8.3f %8.3f %7d %5d %12d",
+				this.hasherCount.get(), recentSize, this.hashesPerSession, avgRate / (double) (recentSize / this.hasherCount.get()), 
+				coreEff / (double) recentSize, argEff / (double) recentSize, 
+				shares, finds, dls));
+		
+		System.out.println(" " + this.lastSpeed.getAndSet(0) + " " + this.speedAccrue.getAndSet(0));
+		
 		recentWorkers.clear();
 		
 		if (AdvMode.auto.equals(this.hasherMode)) {
@@ -1057,7 +1098,7 @@ public class Miner implements UncaughtExceptionHandler {
 	}
 	
 	private String speed() {
-		return String.format("%12.4f", (this.lastSpeed.doubleValue() / 10000d));
+		return String.format("%12.4f", (((double) this.lastSpeed.get() / 10000d) / (double) this.speedAccrue.get()));
 	}
 
 	private String avgSpeed(long clockBegin) {

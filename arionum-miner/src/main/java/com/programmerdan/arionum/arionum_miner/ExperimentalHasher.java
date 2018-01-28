@@ -167,8 +167,8 @@ public class ExperimentalHasher extends Hasher {
 		}
 		if (active) {
 			parent.workerInit(id);
-			System.out.println(
-					id + "] Spun up STANDARD hashing worker in " + (System.currentTimeMillis() - this.hashBegin) + "ms");
+			//System.out.println(
+			//		id + "] Spun up STANDARD hashing worker in " + (System.currentTimeMillis() - this.hashBegin) + "ms");
 		}
 
 		long statCycle = 0l;
@@ -256,7 +256,7 @@ public class ExperimentalHasher extends Hasher {
 		}
 		this.hashEnd = System.currentTimeMillis();
 		this.hashTime = this.hashEnd - this.hashBegin;
-		System.out.println(id + "] This worker is now inactive.");
+		//System.out.println(id + "] This worker is now inactive.");
 		this.parent.hasherCount.decrementAndGet();
 	}
 }
