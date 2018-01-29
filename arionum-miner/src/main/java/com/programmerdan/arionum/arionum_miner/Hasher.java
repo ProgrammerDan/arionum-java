@@ -148,7 +148,7 @@ public abstract class Hasher implements Runnable{
 	}
 	
 	
-	public void clearTimers() {
+/*	public void clearTimers() {
 		synchronized(this) {
 			loopTime = 0;
 			priorArgonTime = argonTime;
@@ -158,7 +158,7 @@ public abstract class Hasher implements Runnable{
 			nonArgonTime = 0l;
 			hashesRecent = 0l;
 		}
-	}
+	}*/
 	
 	public void update(BigInteger difficulty, String data, long limit, String publicKey) {
 		this.difficulty = difficulty;

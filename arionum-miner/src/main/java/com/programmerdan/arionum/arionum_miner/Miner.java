@@ -973,7 +973,7 @@ public class Miner implements UncaughtExceptionHandler {
 
 					workerCoreEfficiency.put(workerId, (((double) seconds * 1000d) / ((double) totalTime)));
 
-					hasher.clearTimers();
+					//hasher.clearTimers();
 
 					recentWorkers.add(workerId);
 
