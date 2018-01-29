@@ -42,7 +42,7 @@ public abstract class Hasher implements Runnable{
 	protected Miner parent;
 
 	public void run() {
-		try (AffinityLock al = AffinityLock.acquireCore()){
+		try {
 			active = true;
 			go();
 		} catch (Throwable e) {

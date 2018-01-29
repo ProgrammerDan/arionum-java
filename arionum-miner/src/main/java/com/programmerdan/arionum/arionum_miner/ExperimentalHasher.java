@@ -166,72 +166,76 @@ public class ExperimentalHasher extends Hasher {
 		long statShaEnd = 0l;
 		long statEnd = 0l;
 
-		while (active) {
-			statCycle = System.currentTimeMillis();
-			statBegin = System.nanoTime();
-			try {
-				insRandom.nextBytes(salt); // 47 ns
-
-				statArgonBegin = System.nanoTime();
-
-				argonlib.argon2i_hash_encoded(iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize, salt,
-						saltLen, hashLen, encoded, encLen); // refactor saves like 30,000-200,000 ns per hash // 34.2 ms
-															// -- 34,200,000 ns
-				statArgonEnd = System.nanoTime();
-
-				System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue());
-				// 10-20ns (vs. 1200ns of strings in former StableHasher)
-
-				statShaBegin = System.nanoTime();
-				
-				byteBase = sha512.digest(fullHashBaseBuffer);
-				for (int i = 0; i < 5; i++) {
-					byteBase = sha512.digest(byteBase);
-				}
-				
-				statShaEnd = System.nanoTime();
-				// shas total 4900-5000ns for all 6 digests, or < 1000ns ea
-
-				StringBuilder duration = new StringBuilder(25);
-				duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
-						.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
-						.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
-
-				long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
-				// 385 ns for duration
-
-				if (finalDuration > 0 && finalDuration <= this.limit) {
-
-					parent.submit(rawNonce, new String(encoded), finalDuration);
-					if (finalDuration <= 240) {
-						finds++;
-					} else {
-						shares++;
+		try (AffinityLock al = AffinityLock.acquireCore()) {
+			while (active) {
+				statCycle = System.currentTimeMillis();
+				statBegin = System.nanoTime();
+				try {
+					insRandom.nextBytes(salt); // 47 ns
+	
+					statArgonBegin = System.nanoTime();
+	
+					argonlib.argon2i_hash_encoded(iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize, salt,
+							saltLen, hashLen, encoded, encLen); // refactor saves like 30,000-200,000 ns per hash // 34.2 ms
+																// -- 34,200,000 ns
+					statArgonEnd = System.nanoTime();
+	
+					System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue());
+					// 10-20ns (vs. 1200ns of strings in former StableHasher)
+	
+					statShaBegin = System.nanoTime();
+					
+					byteBase = sha512.digest(fullHashBaseBuffer);
+					for (int i = 0; i < 5; i++) {
+						byteBase = sha512.digest(byteBase);
 					}
-					genNonce(); // only gen a new nonce once we exhaust the one we had
+					
+					statShaEnd = System.nanoTime();
+					// shas total 4900-5000ns for all 6 digests, or < 1000ns ea
+	
+					StringBuilder duration = new StringBuilder(25);
+					duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
+							.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
+							.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
+	
+					long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
+					// 385 ns for duration
+	
+					if (finalDuration > 0 && finalDuration <= this.limit) {
+	
+						parent.submit(rawNonce, new String(encoded), finalDuration);
+						if (finalDuration <= 240) {
+							finds++;
+						} else {
+							shares++;
+						}
+						genNonce(); // only gen a new nonce once we exhaust the one we had
+					}
+	
+					hashCount++;
+					statEnd = System.nanoTime();
+	
+					if (finalDuration < this.bestDL) {
+						this.bestDL = finalDuration;
+					}
+	
+					this.argonTime += statArgonEnd - statArgonBegin;
+					this.shaTime += statShaEnd - statShaBegin;
+					this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
+	
+				} catch (Exception e) {
+					System.err.println(id + "] This worker failed somehow. Killing it.");
+					e.printStackTrace();
+					active = false;
 				}
-
-				hashCount++;
-				statEnd = System.nanoTime();
-
-				if (finalDuration < this.bestDL) {
-					this.bestDL = finalDuration;
+				this.loopTime += System.currentTimeMillis() - statCycle;
+	
+				if (this.hashCount > this.targetHashCount || this.loopTime > this.maxTime) {
+					this.active = false;
 				}
-
-				this.argonTime += statArgonEnd - statArgonBegin;
-				this.shaTime += statShaEnd - statShaBegin;
-				this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
-
-			} catch (Exception e) {
-				System.err.println(id + "] This worker failed somehow. Killing it.");
-				e.printStackTrace();
-				active = false;
 			}
-			this.loopTime += System.currentTimeMillis() - statCycle;
-
-			if (this.hashCount > this.targetHashCount || this.loopTime > this.maxTime) {
-				this.active = false;
-			}
+		} catch (Throwable e) {
+			e.printStackTrace();
 		}
 		this.hashEnd = System.currentTimeMillis();
 		this.hashTime = this.hashEnd - this.hashBegin;
