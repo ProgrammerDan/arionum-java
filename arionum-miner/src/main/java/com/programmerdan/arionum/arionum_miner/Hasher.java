@@ -35,7 +35,6 @@ import net.openhft.affinity.AffinityLock;
  * 
  * 
  * @author ProgrammerDan (Daniel Boston)
- *
  */
 public abstract class Hasher implements Runnable{
 
@@ -45,6 +44,7 @@ public abstract class Hasher implements Runnable{
 		try {
 			active = true;
 			go();
+			active = false;
 		} catch (Throwable e) {
 			System.err.println("Detected thread " + Thread.currentThread().getName() + " death due to error: " + e.getMessage());
 			e.printStackTrace();

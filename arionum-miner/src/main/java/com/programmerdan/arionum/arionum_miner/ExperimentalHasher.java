@@ -101,8 +101,6 @@ public class ExperimentalHasher extends Hasher {
 		genNonce();
 	}
 
-	/**
-	 */
 	private void genNonce() {
 		insRandom = new Random(random.nextLong());
 		String encNonce = null;
@@ -139,7 +137,7 @@ public class ExperimentalHasher extends Hasher {
 
 	@Override
 	public void go() {
-		active = true;
+		boolean doLoop = active = true;
 		this.hashBegin = System.currentTimeMillis();
 
 		this.parent.hasherCount.getAndIncrement();
@@ -153,6 +151,7 @@ public class ExperimentalHasher extends Hasher {
 			e1.printStackTrace();
 			System.exit(1);
 			active = false;
+			doLoop = false;
 		}
 		if (active) {
 			parent.workerInit(id);
@@ -167,7 +166,7 @@ public class ExperimentalHasher extends Hasher {
 		long statEnd = 0l;
 
 		try (AffinityLock al = AffinityLock.acquireCore()) {
-			while (active) {
+			while (doLoop && active) {
 				statCycle = System.currentTimeMillis();
 				statBegin = System.nanoTime();
 				try {
@@ -226,12 +225,12 @@ public class ExperimentalHasher extends Hasher {
 				} catch (Exception e) {
 					System.err.println(id + "] This worker failed somehow. Killing it.");
 					e.printStackTrace();
-					active = false;
+					doLoop = false;
 				}
 				this.loopTime += System.currentTimeMillis() - statCycle;
 	
 				if (this.hashCount > this.targetHashCount || this.loopTime > this.maxTime) {
-					this.active = false;
+					doLoop = false;
 				}
 			}
 		} catch (Throwable e) {
@@ -240,5 +239,6 @@ public class ExperimentalHasher extends Hasher {
 		this.hashEnd = System.currentTimeMillis();
 		this.hashTime = this.hashEnd - this.hashBegin;
 		this.parent.hasherCount.decrementAndGet();
+		this.active = false;
 	}
 }

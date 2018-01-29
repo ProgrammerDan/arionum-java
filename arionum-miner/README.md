@@ -13,6 +13,28 @@ That way, the miner threads can keep on mining, and aren't held up by the update
 
 Enjoy!
 
+#### How to run 
+
+Get dependency:
+
+* Java 8 JRE (OpenJRE 8 and Oracle Java 8 both work just fine)
+
+* On Linux or MacOSX, download the latest ".jar" release file
+
+    * If you've got it on your desktop, you should be able to doubleclick it.
+
+    * If that doesn't work, open a shell, go to the download folder, and run `./jar -java arionum-miner-java.jar`
+
+* On Windows, download the latest ".exe" release file
+
+    * Double click the .exe to run
+
+* Follow interactive prompt -- if a default is offered, press "enter" key to accept it. I recommend using defaults.
+
+* Configuration is automatically saved and used again when you open the miner up next
+
+* Default config is `config.cfg` in the same folder as the .jar or .exe -- open it in any text editor to modify
+
 #### To compile
 
 Get depencies
@@ -43,20 +65,22 @@ Pick a place to install. For linux:
 
 #### To run
 
-##### For Linux:
+##### For Linux / Mac OS:
 
-Execute ```./run-pool.sh [your address]``` where ```[your address]``` is your Arionum wallet address
+Execute `java -jar arionum-miner-java.jar` and follow the prompts on screen
 
 ##### For Windows:
 
-Execute ```./run-pool.bat [your address]``` where ```[your address]``` is your Arionum wallet address
+Execute `arionum-miner-java.exe` and follow the prompts on screen
 
-In either case this will run the pool, pointing at http://aropool.com , using your wallet address. By default only a single hasher will spin up and the php-parity core will be used.
+##### For All:
+
+Take the defaults to run the pool, pointing at http://aropool.com , using your wallet address. If you take the defaults, the "stable" or "standard" miner will run, using cores / 4.
 
 
 ##### For solo mining in Linux:
 
-Execute ```./run-solo.sh [node-address] [public-key] [private-key]```
+Execute `java -jar arionum-miner-java.jar` and follow the prompts on screen, choose "solo" instead of pool.
 
 Please note solo hasn't been tested, but it's 99.9% the same code so should be fine. Pool has been extensively tested. 
 
@@ -64,8 +88,6 @@ Please note solo hasn't been tested, but it's 99.9% the same code so should be f
 ##### General advice:
 
 Rule of thumb is no more then 1 miner per 4 cores/vcores.
-
-Pull the ```java -jar``` execution line out of the appropriate script to customize it. The .sh and .bat files are regenerated when you rebuild, so any customizations you make to them will be lost.
 
 ----------------------
 # Comparison to php-miner

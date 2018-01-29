@@ -1,4 +1,8 @@
-## Installation guide for Windows 10 for using ProgrammerDan's Java mining tool
+## Compile guide for Windows 10 for using ProgrammerDan's Java mining tool
+
+### Do you need to compile?
+
+Only use these steps if the release `.exe` doesn't work for you, otherwise, prefer to use the release as it will be most stable, most tested, and easiest to run. If it fails, follow the steps below.
 
 ### Necessary program's
 - [Maven](https://maven.apache.org/)

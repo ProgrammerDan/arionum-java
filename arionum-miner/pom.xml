@@ -4,7 +4,7 @@
 
 	<groupId>com.programmerdan.arionum</groupId>
 	<artifactId>arionum-miner</artifactId>
-	<version>0.1.1-SNAPSHOT</version>
+	<version>0.2.0-SNAPSHOT</version>
 	<packaging>jar</packaging>
 
 	<name>arionum-miner-java</name>
@@ -115,11 +115,11 @@
 								<runtimeBits>64/32</runtimeBits>
 							</jre>
 							<versionInfo>
-								<fileVersion>0.1.1.0</fileVersion>
+								<fileVersion>0.2.0.0</fileVersion>
 								<txtFileVersion>${project.version}</txtFileVersion>
 								<fileDescription>Arionum Miner in Java</fileDescription>
 								<copyright>2018 AroDev, portions ProgrammerDan (MIT license)</copyright>
-								<productVersion>0.1.1.0</productVersion>
+								<productVersion>0.2.0.0</productVersion>
 								<txtProductVersion>${project.version}</txtProductVersion>
 								<productName>Arionum Miner in Java</productName>
 								<companyName></companyName>

@@ -75,7 +75,6 @@ import net.openhft.affinity.AffinityLock;
 
 /**
  * Miner wrapper.
- *
  */
 public class Miner implements UncaughtExceptionHandler {
 
@@ -569,10 +568,11 @@ public class Miner implements UncaughtExceptionHandler {
 			System.err.println("  colors: " + this.colors);
 			System.err.println();
 			System.err.println("Usage: ");
+			System.err.println("  java -jar arionum-miner-java.jar");
 			System.err.println(
-					"  java -jar arionum-miner.jar pool http://aropool.com address [#hashers] [basic|debug|experimental] [true|false]");
+					"  java -jar arionum-miner-java.jar pool http://aropool.com address [#hashers] [basic|debug|experimental] [true|false]");
 			System.err.println(
-					"  java -jar arionum-miner.jar solo node-address pubKey priKey [#hashers] [basic|debug|experimental] [true|false]");
+					"  java -jar arionum-miner-java.jar solo node-address pubKey priKey [#hashers] [basic|debug|experimental] [true|false]");
 			System.err.println(" where:");
 			System.err.println("   [#hashers] is # of hashers to spin up. Default 1.");
 			System.err.println(
@@ -796,7 +796,7 @@ public class Miner implements UncaughtExceptionHandler {
 			}
 
 			if (!AdvMode.auto.equals(this.hasherMode) && this.hasherCount.get() < maxHashers) {
-				String workerId = php_uniqid();
+				String workerId = this.hasherCount.get() + "]" + php_uniqid();
 				Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession, (long) this.sessionLength * 2l);
 				updateWorker(hasher);
 				this.hashers.submit(hasher);
@@ -912,7 +912,7 @@ public class Miner implements UncaughtExceptionHandler {
 	protected void workerFinish(Hasher worker) {
 		// TODO do stuff with outgoing worker
 
-		String workerId = php_uniqid();
+		String workerId = this.hasherCount.get() + "]" + php_uniqid();
 		Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession, (long) this.sessionLength * 2l);
 		updateWorker(hasher);
 		this.hashers.submit(hasher);
@@ -1021,8 +1021,8 @@ public class Miner implements UncaughtExceptionHandler {
 	}
 
 	private void printWorkerStats() {
-		System.out.println(String.format(" %7s %5s %5s %7s %8s %8s %8s %7s %5s %5s", "Streams", "Runs", "H/run", "Cur H/s",
-				"Cur TiC%", "Argon %", "Sha %", "Shares", "Finds", "Fail/Reject"));
+		System.out.println(String.format(" %7s %5s %5s %7s %8s %8s %8s %7s %5s %6s", "Streams", "Runs", "H/run", "Cur H/s",
+				"Cur TiC%", "Argon %", "Sha %", "Shares", "Finds", "Reject"));
 		int recentSize = recentWorkers.size();
 		double avgRate = 0.0d;
 		double coreEff = 0.0d;
@@ -1030,7 +1030,7 @@ public class Miner implements UncaughtExceptionHandler {
 		double shaEff = 0.0d;
 		long shares = this.blockShares.get();
 		long finds = this.blockFinds.get();
-		long failures = this.failures;
+		long failures = this.sessionRejects.get();
 
 		try {
 			for (int i = 0; i < recentSize; i++) {
@@ -1042,7 +1042,7 @@ public class Miner implements UncaughtExceptionHandler {
 					shaEff += workerShaRatio.get(workerId).doubleValue() * 100d;
 				}
 			}
-			System.out.println(String.format(" %7d %5d %5d %7.2f %8.3f %8.3f %8.3f %7d %5d %5d", this.hasherCount.get(),
+			System.out.println(String.format(" %7d %5d %5d %7.2f %8.3f %8.3f %8.3f %7d %5d %6d", this.hasherCount.get(),
 					recentSize, this.hashesPerSession, avgRate / (double) (recentSize / this.hasherCount.get()),
 					coreEff / (double) recentSize, argEff / (double) recentSize, shaEff / (double) recentSize, shares, finds, failures));
 	

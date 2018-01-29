@@ -1,6 +1,21 @@
 Extended Documentation for Java port of Arionum-miner
 ==========================
 
+New as of 0.1.0 and later versions, just run the miner! Don't mess with command line flags.
+
+If you want to use command line flags, however, follow along:
+
+----------------------------
+
+For multi-preconfigs, simply pass the name of the config file as the first and only command line flag:
+
+``` java -jar arionum-miner-java.jar my-custom-config.cfg```
+
+And if that config doesn't exist, it will create it with the answers you give to the prompts. If it does exist, it will load it and use it.
+
+
+----------------------------
+
 For pool-based mining, full command line flags:
 
 ```  java -jar arionum-miner-[version].jar pool [pool address] [wallet address] [# hashers] [hasher core] [colored output]```
@@ -23,7 +38,7 @@ For pool-based mining, full command line flags:
 
     `experimental`:  Bleeding edge. Might be faster, might have tradeoffs, no warrantees.
 
-**colored output**: Only supported in linux, set to true to add some color to the output of the statistic updates.
+**colored output**: Only supported in linux, set to true to add some color to the output of the statistic updates. Note, this isn't working yet.
 
 --------------------
 
