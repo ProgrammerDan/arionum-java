@@ -46,8 +46,8 @@ import de.mkammerer.argon2.Argon2Factory.Argon2Types;
  */
 public class GPUHasher extends Hasher {
 
-	public GPUHasher(Miner parent, String id, long target) {
-		super(parent, id, target);
+	public GPUHasher(Miner parent, String id, long target, long maxTime) {
+		super(parent, id, target, maxTime);
 	}
 	
 	private SecureRandom random = new SecureRandom();
@@ -122,8 +122,9 @@ public class GPUHasher extends Hasher {
 		long statBegin = 0l;
 		long statArgonBegin = 0l;
 		long statArgonEnd = 0l;
+		long statShaBegin = 0l;
+		long statShaEnd = 0l;
 		long statEnd = 0l;
-		long stuck = 0;
 		
 		while (active) {
 			statCycle = System.currentTimeMillis();
@@ -136,11 +137,13 @@ public class GPUHasher extends Hasher {
 				hashBase.append(rawHashBase).append(argon);
 
 				byteBase = hashBase.toString().getBytes();
+				statShaBegin = System.nanoTime();
 				for (int i = 0; i < 5; i++) {
 					byteBase = sha512.digest(byteBase);
 				}
 				byteBase = sha512.digest(byteBase);
-
+				statShaEnd = System.nanoTime();
+				
 				StringBuilder duration = new StringBuilder(25);
 				duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
 						.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
@@ -158,23 +161,16 @@ public class GPUHasher extends Hasher {
 				}
 				
 				hashCount++;
-				hashesRecent++;
 				statEnd = System.nanoTime();
 				
 				if (finalDuration < this.bestDL) { // split the difference; if we're not getting movement after a while, just move on
 					this.bestDL = finalDuration;
-					stuck = 0;
-				} else {
-					stuck++;
-					if (priorHashesRecent > 0 && stuck > priorHashesRecent * 15) {
-						genNonce();
-						stuck = 0;
-					}
 				}
 				
 				//System.out.println("\033[1A\033[2K" + finalDuration);
 				
 				this.argonTime += statArgonEnd - statArgonBegin;
+				this.shaTime += statShaEnd - statShaBegin;
 				this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
 			} catch (Exception e) {
 				System.err.println(id + "] This worker failed somehow. Killing it.");
@@ -182,6 +178,10 @@ public class GPUHasher extends Hasher {
 				active = false;
 			}
 			this.loopTime += System.currentTimeMillis() - statCycle;
+			
+			if (this.hashCount > this.targetHashCount || this.loopTime > this.maxTime) {
+				this.active = false;
+			}
 		}
 		System.out.println(id + "] This worker is now inactive.");
 		this.parent.hasherCount.decrementAndGet();

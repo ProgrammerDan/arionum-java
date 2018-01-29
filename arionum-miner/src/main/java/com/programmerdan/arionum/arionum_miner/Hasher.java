@@ -67,6 +67,7 @@ public abstract class Hasher implements Runnable{
 	protected long hashBegin;
 	protected long hashEnd;
 	protected long hashTime;
+	protected long maxTime; 
 	
 	// local copy of data, updated "off thread"
 	protected BigInteger difficulty;
@@ -84,22 +85,17 @@ public abstract class Hasher implements Runnable{
 	/* Timing Stats, current */
 	protected long loopTime;
 	protected long argonTime;
+	protected long shaTime;
 	protected long nonArgonTime;
-	protected long hashesRecent;
 
-	/* Timing Stats, prior round */
-	protected long priorArgonTime;
-	protected long priorNonArgonTime;
-	protected long priorHashesRecent;
-	
-
-	public Hasher(Miner parent, String id, long target) {
+	public Hasher(Miner parent, String id, long target, long maxTime) {
 		super();
 		this.parent = parent;
 		this.id = id;
 		this.active = false;
 		this.hashCount = 0l;
 		this.targetHashCount = target;
+		this.maxTime = maxTime;
 	}
 	
 	
@@ -119,6 +115,10 @@ public abstract class Hasher implements Runnable{
 		return argonTime;
 	}
 	
+	public long getShaTime() {
+		return shaTime;
+	}
+	
 	public long getNonArgonTime() {
 		return nonArgonTime;
 	}
@@ -130,35 +130,6 @@ public abstract class Hasher implements Runnable{
 	public long getHashTime() {
 		return this.hashTime;
 	}
-	
-	public long getHashesRecent() {
-		return hashesRecent;
-	}
-	
-	public long getArgonTimeExp() {
-		return argonTime + priorArgonTime;
-	}
-	
-	public long getNonArgonTimeExp() {
-		return nonArgonTime + priorNonArgonTime;
-	}
-	
-	public long getHashesRecentExp() {
-		return hashesRecent + priorHashesRecent;
-	}
-	
-	
-/*	public void clearTimers() {
-		synchronized(this) {
-			loopTime = 0;
-			priorArgonTime = argonTime;
-			priorNonArgonTime = nonArgonTime;
-			priorHashesRecent = hashesRecent;
-			argonTime = 0l;
-			nonArgonTime = 0l;
-			hashesRecent = 0l;
-		}
-	}*/
 	
 	public void update(BigInteger difficulty, String data, long limit, String publicKey) {
 		this.difficulty = difficulty;

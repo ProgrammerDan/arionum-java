@@ -44,27 +44,17 @@ import net.openhft.affinity.AffinityLock;
 import net.openhft.affinity.AffinityStrategies;
 
 /**
- * The intent for this hasher is deeper self-inspection of running times of
- * various components. It can be used as a testbed for comparative performance.
- * It is not meant to be used for general use
+ * The intent for this hasher is deeper self-inspection of running times of various components. It can be used as a testbed for comparative performance. It is not meant to be used for general use
  *
- * This particular experimental hasher takes advantage of an observation:
- * namely, that we're doing double the randomness minimally necessary for the
- * scheme, since the argon2i implementation here and in the php reference
- * internally salts the "password" with 32 bytes of random data. So the nonce
- * itself can be considered just a payload, fixed entity, and allow the salting
- * of the argon2i to control uniformly random generation of SHA-512 DL outcomes.
+ * This particular experimental hasher takes advantage of an observation: namely, that we're doing double the randomness minimally necessary for the scheme, since the argon2i implementation here and in the php reference internally salts the
+ * "password" with 32 bytes of random data. So the nonce itself can be considered just a payload, fixed entity, and allow the salting of the argon2i to control uniformly random generation of SHA-512 DL outcomes.
  * 
- * This gives me 5-10% H/s speedups on isolated testing with no increase in
- * rejections. Block finds and shares remain as expected for H/s observed.
+ * This gives me 5-10% H/s speedups on isolated testing with no increase in rejections. Block finds and shares remain as expected for H/s observed.
  * 
- * Another indicator of improved performance is tracking reveals 99.97% of time
- * is spent in argon2i codepath, vs. between 99.8 and 99.9% for other cores.
- * This might sound small but adds up in a big way over time, as its a per-hash
+ * Another indicator of improved performance is tracking reveals 99.97% of time is spent in argon2i codepath, vs. between 99.8 and 99.9% for other cores. This might sound small but adds up in a big way over time, as its a per-hash
  * improvement.
  * 
- * Once a nonce is submitted, it is discarded and a new one generated, as the
- * pool does not allow resubmission of prior nonces.
+ * Once a nonce is submitted, it is discarded and a new one generated, as the pool does not allow resubmission of prior nonces.
  * 
  * 
  * @author ProgrammerDan (Daniel Boston)
@@ -83,8 +73,8 @@ public class ExperimentalHasher extends Hasher {
 	private final byte[] encoded;
 	private final Argon2Library argonlib;
 
-	public ExperimentalHasher(Miner parent, String id, long target) {
-		super(parent, id, target);
+	public ExperimentalHasher(Miner parent, String id, long target, long maxTime) {
+		super(parent, id, target, maxTime);
 
 		// SET UP ARGON FOR DIRECT-TO-JNA-WRAPPER-EXEC
 		argonlib = Argon2Library.INSTANCE;
@@ -143,8 +133,7 @@ public class ExperimentalHasher extends Hasher {
 		hashBaseBuffer = rawHashBase.getBytes();
 		hashBaseBufferSize = new Size_t(hashBaseBuffer.length);
 		fullHashBaseBuffer = new byte[hashBaseBuffer.length + encLen.intValue()];
-		// System.out.println("hashBaseBuffer len: " + hashBaseBuffer.length);
-		// System.out.println("fullHashBaseBuffer len: " + fullHashBaseBuffer.length);
+
 		System.arraycopy(hashBaseBuffer, 0, fullHashBaseBuffer, 0, hashBaseBuffer.length);
 	}
 
@@ -152,7 +141,7 @@ public class ExperimentalHasher extends Hasher {
 	public void go() {
 		active = true;
 		this.hashBegin = System.currentTimeMillis();
-		
+
 		this.parent.hasherCount.getAndIncrement();
 		byte[] byteBase = null;
 
@@ -167,16 +156,15 @@ public class ExperimentalHasher extends Hasher {
 		}
 		if (active) {
 			parent.workerInit(id);
-			//System.out.println(
-			//		id + "] Spun up STANDARD hashing worker in " + (System.currentTimeMillis() - this.hashBegin) + "ms");
 		}
 
 		long statCycle = 0l;
 		long statBegin = 0l;
 		long statArgonBegin = 0l;
 		long statArgonEnd = 0l;
+		long statShaBegin = 0l;
+		long statShaEnd = 0l;
 		long statEnd = 0l;
-		long stuck = 0;
 
 		while (active) {
 			statCycle = System.currentTimeMillis();
@@ -191,18 +179,17 @@ public class ExperimentalHasher extends Hasher {
 															// -- 34,200,000 ns
 				statArgonEnd = System.nanoTime();
 
-				System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue()); // 10-20ns
-																													// (vs.
-																													// 1200ns
-																													// of
-																													// strings
-																													// in
-																													// StableHasher)
+				System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue());
+				// 10-20ns (vs. 1200ns of strings in former StableHasher)
 
+				statShaBegin = System.nanoTime();
+				
 				byteBase = sha512.digest(fullHashBaseBuffer);
 				for (int i = 0; i < 5; i++) {
 					byteBase = sha512.digest(byteBase);
 				}
+				
+				statShaEnd = System.nanoTime();
 				// shas total 4900-5000ns for all 6 digests, or < 1000ns ea
 
 				StringBuilder duration = new StringBuilder(25);
@@ -225,22 +212,14 @@ public class ExperimentalHasher extends Hasher {
 				}
 
 				hashCount++;
-				hashesRecent++;
 				statEnd = System.nanoTime();
 
-				if (finalDuration < this.bestDL) { // split the difference; if we're not getting movement after a while,
-													// just move on
+				if (finalDuration < this.bestDL) {
 					this.bestDL = finalDuration;
-					stuck = 0;
-				} else {
-					stuck++;
-					if (priorHashesRecent > 0 && stuck > priorHashesRecent * 15) {
-						genNonce();
-						stuck = 0;
-					}
 				}
 
 				this.argonTime += statArgonEnd - statArgonBegin;
+				this.shaTime += statShaEnd - statShaBegin;
 				this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
 
 			} catch (Exception e) {
@@ -249,14 +228,13 @@ public class ExperimentalHasher extends Hasher {
 				active = false;
 			}
 			this.loopTime += System.currentTimeMillis() - statCycle;
-			
-			if (this.hashCount > this.targetHashCount) {
+
+			if (this.hashCount > this.targetHashCount || this.loopTime > this.maxTime) {
 				this.active = false;
 			}
 		}
 		this.hashEnd = System.currentTimeMillis();
 		this.hashTime = this.hashEnd - this.hashBegin;
-		//System.out.println(id + "] This worker is now inactive.");
 		this.parent.hasherCount.decrementAndGet();
 	}
 }

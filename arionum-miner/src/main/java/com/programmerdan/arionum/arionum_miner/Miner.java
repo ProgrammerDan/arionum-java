@@ -118,6 +118,7 @@ public class Miner implements UncaughtExceptionHandler {
 	private final ConcurrentHashMap<String, AtomicLong> workerClockTime;
 	private final ConcurrentHashMap<String, AtomicLong> workerLastReport;
 	private final ConcurrentHashMap<String, Double> workerCoreEfficiency;
+	private final ConcurrentHashMap<String, Double> workerShaRatio;
 
 	/**
 	 * One or more hashing threads.
@@ -482,6 +483,7 @@ public class Miner implements UncaughtExceptionHandler {
 		this.workerClockTime = new ConcurrentHashMap<String, AtomicLong>();
 		this.workerLastReport = new ConcurrentHashMap<String, AtomicLong>();
 		this.workerCoreEfficiency = new ConcurrentHashMap<String, Double>();
+		this.workerShaRatio = new ConcurrentHashMap<String, Double>();
 
 		/* end stats */
 
@@ -795,7 +797,7 @@ public class Miner implements UncaughtExceptionHandler {
 
 			if (!AdvMode.auto.equals(this.hasherMode) && this.hasherCount.get() < maxHashers) {
 				String workerId = php_uniqid();
-				Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession);
+				Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession, (long) this.sessionLength * 2l);
 				updateWorker(hasher);
 				this.hashers.submit(hasher);
 				addWorker(workerId, hasher);
@@ -858,9 +860,9 @@ public class Miner implements UncaughtExceptionHandler {
 		workers.put(workerId, hasher);
 	}
 
-	protected void releaseWorker(String workerId) {
+/*	protected void releaseWorker(String workerId) {
 		workers.remove(workerId);
-	}
+	}*/
 
 	/**
 	 * We update all workers with latest information from pool / node
@@ -869,9 +871,9 @@ public class Miner implements UncaughtExceptionHandler {
 		workers.forEach((workerId, hasher) -> {
 			if (hasher != null && hasher.isActive()) {
 				updateWorker(hasher);
-			} else {
+			}/* else {
 				releaseWorker(workerId);
-			}
+			}*/
 		});
 	}
 
@@ -903,6 +905,7 @@ public class Miner implements UncaughtExceptionHandler {
 		workerAvgRate.put(workerId, 0.0d);
 		workerClockTime.put(workerId, new AtomicLong(0l));
 		workerCoreEfficiency.put(workerId, 0.0d);
+		workerShaRatio.put(workerId, 0.0d);
 		workerLastReport.put(workerId, new AtomicLong(System.currentTimeMillis()));
 	}
 
@@ -910,7 +913,7 @@ public class Miner implements UncaughtExceptionHandler {
 		// TODO do stuff with outgoing worker
 
 		String workerId = php_uniqid();
-		Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession);
+		Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession, (long) this.sessionLength * 2l);
 		updateWorker(hasher);
 		this.hashers.submit(hasher);
 		addWorker(workerId, hasher);
@@ -954,18 +957,24 @@ public class Miner implements UncaughtExceptionHandler {
 					//workerBlockFinds.get(workerId).set(hasher.getFinds());
 					blockFinds.addAndGet(hasher.getFinds());
 
-					long argonTime = hasher.getArgonTimeExp();
+					long argonTime = hasher.getArgonTime();
 					//workerArgonTime.get(workerId).set(argonTime);
-
-					long nonArgonTime = hasher.getNonArgonTimeExp();
+					long shaTime = hasher.getShaTime();
+					long nonArgonTime = hasher.getNonArgonTime();
 					//workerNonArgonTime.get(workerId).set(nonArgonTime);
-					if (argonTime > 0) {
-						workerLastRatio.put(workerId, (double) argonTime / ((double) argonTime + nonArgonTime));
+					long fullTime = argonTime + nonArgonTime;
+					
+					if (fullTime > 0) {
+						workerLastRatio.put(workerId, (double) argonTime / (double) fullTime);
+					}
+					
+					if (shaTime > 0 || fullTime > 0) {
+						workerShaRatio.put(workerId, (double) shaTime / (double) fullTime);
 					}
 
 					long totalTime = hasher.getHashTime();
 
-					long seconds = (argonTime + nonArgonTime) / 1000000000l;
+					long seconds = fullTime / 1000000000l;
 					//double rate = (double) allHashes / ((double) seconds);
 
 					//workerRate.put(workerId, rate);
@@ -1012,29 +1021,35 @@ public class Miner implements UncaughtExceptionHandler {
 	}
 
 	private void printWorkerStats() {
-		System.out.println(String.format(" %7s %5s %5s %7s %8s %8s %7s %5s %5s", "Streams", "Runs", "H/run", "Cur H/s",
-				"Cur TiC%", "Argon %", "Shares", "Finds", "Fail/Reject"));
+		System.out.println(String.format(" %7s %5s %5s %7s %8s %8s %8s %7s %5s %5s", "Streams", "Runs", "H/run", "Cur H/s",
+				"Cur TiC%", "Argon %", "Sha %", "Shares", "Finds", "Fail/Reject"));
 		int recentSize = recentWorkers.size();
 		double avgRate = 0.0d;
 		double coreEff = 0.0d;
 		double argEff = 0.0d;
+		double shaEff = 0.0d;
 		long shares = this.blockShares.get();
 		long finds = this.blockFinds.get();
 		long failures = this.failures;
 
-		for (int i = 0; i < recentSize; i++) {
-			String workerId = recentWorkers.pollFirst();
-			if (workerId != null) {
-				avgRate += workerAvgRate.get(workerId).doubleValue();
-				coreEff += workerCoreEfficiency.get(workerId).doubleValue() * 100d;
-				argEff += workerLastRatio.get(workerId).doubleValue() * 100d;
+		try {
+			for (int i = 0; i < recentSize; i++) {
+				String workerId = recentWorkers.pollFirst();
+				if (workerId != null) {
+					avgRate += workerAvgRate.get(workerId).doubleValue();
+					coreEff += workerCoreEfficiency.get(workerId).doubleValue() * 100d;
+					argEff += workerLastRatio.get(workerId).doubleValue() * 100d;
+					shaEff += workerShaRatio.get(workerId).doubleValue() * 100d;
+				}
 			}
+			System.out.println(String.format(" %7d %5d %5d %7.2f %8.3f %8.3f %8.3f %7d %5d %5d", this.hasherCount.get(),
+					recentSize, this.hashesPerSession, avgRate / (double) (recentSize / this.hasherCount.get()),
+					coreEff / (double) recentSize, argEff / (double) recentSize, shaEff / (double) recentSize, shares, finds, failures));
+	
+			recentWorkers.clear();
+		} catch (Throwable t) {
+			t.printStackTrace();
 		}
-		System.out.println(String.format(" %7d %5d %5d %7.2f %8.3f %8.3f %7d %5d %5d", this.hasherCount.get(),
-				recentSize, this.hashesPerSession, avgRate / (double) (recentSize / this.hasherCount.get()),
-				coreEff / (double) recentSize, argEff / (double) recentSize, shares, finds, failures));
-
-		recentWorkers.clear();
 
 		if (AdvMode.auto.equals(this.hasherMode)) {
 			System.out.println("In auto-adjust mode. Next readjustment in " + "" + "s.");
