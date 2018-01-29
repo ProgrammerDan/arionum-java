@@ -28,6 +28,8 @@ package com.programmerdan.arionum.arionum_miner;
 
 import java.math.BigInteger;
 
+import net.openhft.affinity.AffinityLock;
+
 /**
  * Abstraction layer to allow multiple miner definitions.
  * 
@@ -40,7 +42,7 @@ public abstract class Hasher implements Runnable{
 	protected Miner parent;
 
 	public void run() {
-		try {
+		try (AffinityLock al = AffinityLock.acquireCore()){
 			active = true;
 			go();
 		} catch (Throwable e) {
