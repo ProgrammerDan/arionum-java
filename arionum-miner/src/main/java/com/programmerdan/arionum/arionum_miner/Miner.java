@@ -90,6 +90,9 @@ public class Miner implements UncaughtExceptionHandler {
 	/*
 	 * Worker statistics
 	 */
+	private final ConcurrentLinkedQueue<HasherStats> deadWorkerSociety;
+	private final AtomicLong deadWorkers;
+	
 	private final ConcurrentHashMap<String, AtomicLong> workerHashes;
 	//private final ConcurrentHashMap<String, AtomicLong> workerBlockShares;
 	//private final ConcurrentHashMap<String, AtomicLong> workerBlockFinds;
@@ -454,6 +457,9 @@ public class Miner implements UncaughtExceptionHandler {
 		this.hasherCount = new AtomicInteger();
 
 		this.workers = new ConcurrentHashMap<String, Hasher>();
+		
+		this.deadWorkerSociety = new ConcurrentLinkedQueue<>();
+		this.deadWorkers = new AtomicLong(0l);
 
 		this.recentWorkers = new ConcurrentSkipListSet<>();
 
@@ -918,9 +924,10 @@ public class Miner implements UncaughtExceptionHandler {
 		workerLastReport.put(workerId, new AtomicLong(System.currentTimeMillis()));
 	}
 
-	protected void workerFinish(Hasher worker) {
+	protected void workerFinish(HasherStats stats, Hasher worker) {
 		// TODO do stuff with outgoing worker
-
+		this.deadWorkerSociety.offer(stats);
+		
 		String workerId = this.hasherCount.get() + "]" + php_uniqid();
 		Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession, (long) this.sessionLength * 2l);
 		updateWorker(hasher);

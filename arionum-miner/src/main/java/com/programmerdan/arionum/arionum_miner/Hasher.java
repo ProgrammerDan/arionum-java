@@ -52,7 +52,8 @@ public abstract class Hasher implements Runnable{
 			System.err.println("\n\nThis is probably fatal, so exiting now.");
 			System.exit(1);
 		}
-		parent.workerFinish(this);
+		HasherStats stats = new HasherStats(argonTime, shaTime, nonArgonTime, hashTime, hashCount, bestDL, shares, finds);
+		parent.workerFinish(stats, this);
 	}
 	
 	/**
