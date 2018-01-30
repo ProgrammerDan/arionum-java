@@ -165,7 +165,7 @@ public class ExperimentalHasher extends Hasher {
 		long statShaEnd = 0l;
 		long statEnd = 0l;
 
-		try (AffinityLock al = AffinityLock.acquireCore()) {
+		try { //(AffinityLock al = AffinityLock.acquireCore()) {
 			while (doLoop && active) {
 				statCycle = System.currentTimeMillis();
 				statBegin = System.nanoTime();

@@ -39,6 +39,7 @@ public class HasherFactory {
 		case standard:
 			return new ExperimentalHasher(parent, id, lifeTime, maxSession);
 		case gpu:
+			return new GPUHasher(parent, id, lifeTime, maxSession);
 		default:
 			return new ExperimentalHasher(parent, id, lifeTime, maxSession);
 		}

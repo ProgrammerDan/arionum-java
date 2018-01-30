@@ -72,6 +72,8 @@ import de.mkammerer.argon2.jna.JnaUint32;
 import de.mkammerer.argon2.jna.Size_t;
 
 import net.openhft.affinity.AffinityLock;
+import net.openhft.affinity.AffinityThreadFactory;
+import net.openhft.affinity.AffinityStrategies;
 
 /**
  * Miner wrapper.
@@ -587,8 +589,15 @@ public class Miner implements UncaughtExceptionHandler {
 				+ this.maxHashers + " hashers. ");
 
 		this.hashers = Executors.newFixedThreadPool(
-				this.maxHashers > 0 ? this.maxHashers : Runtime.getRuntime().availableProcessors(),
-				Executors.privilegedThreadFactory());
+				this.maxHashers > 0 ? this.maxHashers : Runtime.getRuntime().availableProcessors() - 1,
+				new AggressiveAffinityThreadFactory("HashMasher", true));
+				//Executors.privilegedThreadFactory());
+		/*this.hashers = Executors.newFixedThreadPool(
+				this.maxHashers > 0 ? this.maxHashers : Runtime.getRuntime().availableProcessors() - 1,
+				new AffinityThreadFactory("HashMasher", false, 
+					AffinityStrategies.DIFFERENT_CORE,
+					AffinityStrategies.DIFFERENT_SOCKET,
+					AffinityStrategies.SAME_SOCKET));*/
 
 		this.limit = 240; // default
 		this.worker = php_uniqid();
