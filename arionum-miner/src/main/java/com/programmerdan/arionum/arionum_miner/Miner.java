@@ -94,9 +94,6 @@ public class Miner implements UncaughtExceptionHandler {
 	private final AtomicLong deadWorkers;
 	
 	private final ConcurrentHashMap<String, AtomicLong> workerHashes;
-	//private final ConcurrentHashMap<String, AtomicLong> workerBlockShares;
-	//private final ConcurrentHashMap<String, AtomicLong> workerBlockFinds;
-	//private final ConcurrentHashMap<String, AtomicLong> workerRoundBestDL;
 	/*
 	 * Clear this every 100 hashes and dump into the avg record
 	 */
@@ -811,7 +808,7 @@ public class Miner implements UncaughtExceptionHandler {
 			}
 
 			if (!AdvMode.auto.equals(this.hasherMode) && this.hasherCount.get() < maxHashers) {
-				String workerId = this.hasherCount.get() + "]" + php_uniqid();
+				String workerId = this.deadWorkers.getAndIncrement() + "]" + php_uniqid();
 				Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession, (long) this.sessionLength * 2l);
 				updateWorker(hasher);
 				this.hashers.submit(hasher);
@@ -875,9 +872,9 @@ public class Miner implements UncaughtExceptionHandler {
 		workers.put(workerId, hasher);
 	}
 
-/*	protected void releaseWorker(String workerId) {
+	protected void releaseWorker(String workerId) {
 		workers.remove(workerId);
-	}*/
+	}
 
 	/**
 	 * We update all workers with latest information from pool / node
@@ -886,9 +883,7 @@ public class Miner implements UncaughtExceptionHandler {
 		workers.forEach((workerId, hasher) -> {
 			if (hasher != null && hasher.isActive()) {
 				updateWorker(hasher);
-			}/* else {
-				releaseWorker(workerId);
-			}*/
+			}
 		});
 	}
 
@@ -927,8 +922,9 @@ public class Miner implements UncaughtExceptionHandler {
 	protected void workerFinish(HasherStats stats, Hasher worker) {
 		// TODO do stuff with outgoing worker
 		this.deadWorkerSociety.offer(stats);
+		releaseWorker(worker.getID());
 		
-		String workerId = this.hasherCount.get() + "]" + php_uniqid();
+		String workerId = this.deadWorkers.getAndIncrement() + "]" + php_uniqid();
 		Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession, (long) this.sessionLength * 2l);
 		updateWorker(hasher);
 		this.hashers.submit(hasher);
@@ -945,19 +941,17 @@ public class Miner implements UncaughtExceptionHandler {
 			AtomicLong newHashes = new AtomicLong();
 			AtomicLong adjust = new AtomicLong();
 			AtomicLong offload = new AtomicLong();
-			workers.forEach((workerId, hasher) -> {
-				if (hasher == null || hasher.isActive())
-					return;
-				//System.err.println("Pulling stats from finished worker " + workerId );
+			HasherStats worker = null;
+			while ( (worker = this.deadWorkerSociety.poll()) != null) {
 				try {
-					long allHashes = hasher.getHashes();
+					long allHashes = worker.hashes;
 					//workerHashes.get(workerId).set(allHashes); // need this?
 					newHashes.addAndGet(allHashes);
 
 					currentHashes.getAndAdd(allHashes); // need this?
 					hashes.getAndAdd(allHashes);
 
-					long localDL = hasher.getBestDL();
+					long localDL = worker.bestDL;
 					long bDL = bestDL.getAndUpdate((dl) -> {
 						if (localDL < dl)
 							return localDL;
@@ -968,39 +962,37 @@ public class Miner implements UncaughtExceptionHandler {
 
 					// shares are nonces < difficulty > 0 and >= 240
 					//workerBlockShares.get(workerId).set(hasher.getShares());
-					blockShares.addAndGet(hasher.getShares());
+					blockShares.addAndGet(worker.shares);
 					// finds are nonces < 240 (block discovery)
 					//workerBlockFinds.get(workerId).set(hasher.getFinds());
-					blockFinds.addAndGet(hasher.getFinds());
+					blockFinds.addAndGet(worker.finds);
 
-					long argonTime = hasher.getArgonTime();
+					long argonTime = worker.argonTime;
 					//workerArgonTime.get(workerId).set(argonTime);
-					long shaTime = hasher.getShaTime();
-					long nonArgonTime = hasher.getNonArgonTime();
+					long shaTime = worker.shaTime;
+					long nonArgonTime = worker.nonArgonTime;
 					//workerNonArgonTime.get(workerId).set(nonArgonTime);
 					long fullTime = argonTime + nonArgonTime;
 					
 					if (fullTime > 0) {
-						workerLastRatio.put(workerId, (double) argonTime / (double) fullTime);
+						workerLastRatio.put(worker.id, (double) argonTime / (double) fullTime);
 					}
 					
 					if (shaTime > 0 || fullTime > 0) {
-						workerShaRatio.put(workerId, (double) shaTime / (double) fullTime);
+						workerShaRatio.put(worker.id, (double) shaTime / (double) fullTime);
 					}
 
-					long totalTime = hasher.getHashTime();
+					long totalTime = worker.hashTime;
 
 					long seconds = fullTime / 1000000000l;
 					//double rate = (double) allHashes / ((double) seconds);
 
 					//workerRate.put(workerId, rate);
-					workerAvgRate.put(workerId, (double) allHashes / ((double) (totalTime / 1000d)));
+					workerAvgRate.put(worker.id, (double) allHashes / ((double) (totalTime / 1000d)));
 
-					workerCoreEfficiency.put(workerId, (((double) seconds * 1000d) / ((double) totalTime)));
+					workerCoreEfficiency.put(worker.id, (((double) seconds * 1000d) / ((double) totalTime)));
 
-					//hasher.clearTimers();
-
-					recentWorkers.add(workerId);
+					recentWorkers.add(worker.id);
 
 					if (totalTime < this.sessionLength) {
 						double gap = (this.sessionLength - totalTime) / this.sessionLength;
@@ -1019,17 +1011,16 @@ public class Miner implements UncaughtExceptionHandler {
 					}
 
 				} catch (Throwable e) {
-					System.err.println("Pulling stats from finished worker " + workerId + " failed! Message: " + e.getMessage());
+					System.err.println("Pulling stats from finished worker " + worker.id + " failed! Message: " + e.getMessage());
 					e.printStackTrace();
 				}
-			});
+			};
 			if (offload.get() > 0) {
 				this.hashesPerSession += (long) (adjust.doubleValue() / offload.doubleValue());
 			}
 			this.lastSpeed.addAndGet((long) (((newHashes.doubleValue() * 10000000d) / (double) (wallTime))));
 			this.speedAccrue.incrementAndGet();
 
-			recentWorkers.forEach(w -> workers.remove(w)); // remove once we are done with it.
 		} catch (Exception e) {
 			System.err.println(
 					"There was an issue getting stats from the workers. I'll try again in a bit...: " + e.getMessage());
@@ -1063,6 +1054,10 @@ public class Miner implements UncaughtExceptionHandler {
 					coreEff / (double) recentSize, argEff / (double) recentSize, shaEff / (double) recentSize, shares, finds, failures));
 	
 			recentWorkers.clear();
+			workerAvgRate.clear();
+			workerCoreEfficiency.clear();
+			workerLastRatio.clear();
+			workerShaRatio.clear();
 		} catch (Throwable t) {
 			t.printStackTrace();
 		}

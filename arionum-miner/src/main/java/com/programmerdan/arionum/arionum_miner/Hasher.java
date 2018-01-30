@@ -33,7 +33,6 @@ import net.openhft.affinity.AffinityLock;
 /**
  * Abstraction layer to allow multiple miner definitions.
  * 
- * 
  * @author ProgrammerDan (Daniel Boston)
  */
 public abstract class Hasher implements Runnable{
@@ -52,7 +51,7 @@ public abstract class Hasher implements Runnable{
 			System.err.println("\n\nThis is probably fatal, so exiting now.");
 			System.exit(1);
 		}
-		HasherStats stats = new HasherStats(argonTime, shaTime, nonArgonTime, hashTime, hashCount, bestDL, shares, finds);
+		HasherStats stats = new HasherStats(id, argonTime, shaTime, nonArgonTime, hashTime, hashCount, bestDL, shares, finds);
 		parent.workerFinish(stats, this);
 	}
 	
@@ -97,6 +96,10 @@ public abstract class Hasher implements Runnable{
 		this.hashCount = 0l;
 		this.targetHashCount = target;
 		this.maxTime = maxTime;
+	}
+
+	public String getID() {
+		return this.id;
 	}
 	
 	
