@@ -137,7 +137,7 @@ public class ExperimentalHasher extends Hasher {
 
 	@Override
 	public void go() {
-		boolean doLoop = active = true;
+		boolean doLoop = true;
 		this.hashBegin = System.currentTimeMillis();
 
 		this.parent.hasherCount.getAndIncrement();
@@ -149,9 +149,9 @@ public class ExperimentalHasher extends Hasher {
 		} catch (NoSuchAlgorithmException e1) {
 			System.err.println("Unable to find SHA-512 algorithm! Fatal error.");
 			e1.printStackTrace();
-			System.exit(1);
 			active = false;
 			doLoop = false;
+			System.exit(1);
 		}
 		if (active) {
 			parent.workerInit(id);
@@ -239,6 +239,5 @@ public class ExperimentalHasher extends Hasher {
 		this.hashEnd = System.currentTimeMillis();
 		this.hashTime = this.hashEnd - this.hashBegin;
 		this.parent.hasherCount.decrementAndGet();
-		this.active = false;
 	}
 }

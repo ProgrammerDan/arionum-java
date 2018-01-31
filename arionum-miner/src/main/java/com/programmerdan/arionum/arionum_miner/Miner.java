@@ -47,10 +47,12 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Random;
 import java.util.Base64.Encoder;
+import java.util.LinkedList;
 import java.util.Scanner;
 import java.util.TreeSet;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.ExecutionException;
@@ -71,10 +73,6 @@ import de.mkammerer.argon2.jna.Argon2Library;
 import de.mkammerer.argon2.jna.JnaUint32;
 import de.mkammerer.argon2.jna.Size_t;
 
-import net.openhft.affinity.AffinityLock;
-import net.openhft.affinity.AffinityThreadFactory;
-import net.openhft.affinity.AffinityStrategies;
-
 /**
  * Miner wrapper.
  */
@@ -92,8 +90,10 @@ public class Miner implements UncaughtExceptionHandler {
 	 */
 	private final ConcurrentLinkedQueue<HasherStats> deadWorkerSociety;
 	private final AtomicLong deadWorkers;
+
+	private final ConcurrentLinkedDeque<Report> deadWorkerSummaries;
 	
-	private final ConcurrentHashMap<String, AtomicLong> workerHashes;
+	//private final ConcurrentHashMap<String, AtomicLong> workerHashes;
 	/*
 	 * Clear this every 100 hashes and dump into the avg record
 	 */
@@ -102,24 +102,24 @@ public class Miner implements UncaughtExceptionHandler {
 	 * Clear this every 100 hashes and dump into the avg record
 	 */
 	//private final ConcurrentHashMap<String, AtomicLong> workerNonArgonTime;
-	/**
+	/*
 	 * Computed argon vs nonargon ratio -- ideal is more time spent doing argon hashes, less other things!
 	 */
-	private final ConcurrentHashMap<String, Double> workerLastRatio;
-	private final ConcurrentHashMap<String, AtomicLong> workerRateHashes;
+	//private final ConcurrentHashMap<String, Double> workerLastRatio;
+	//private final ConcurrentHashMap<String, AtomicLong> workerRateHashes;
 	//private final ConcurrentHashMap<String, Double> workerRate;
-	private final ConcurrentHashMap<String, Double> workerAvgRate;
-	private final ConcurrentSkipListSet<String> recentWorkers;
+	//private final ConcurrentHashMap<String, Double> workerAvgRate;
+	//private final ConcurrentSkipListSet<String> recentWorkers;
 
-	/**
+	/*
 	 * This is cummulative record of time the worker is aware of being alive and computing hashes.
 	 * 
 	 * Core efficiency is a measure of worker's known time vs. overall system time.
 	 */
-	private final ConcurrentHashMap<String, AtomicLong> workerClockTime;
-	private final ConcurrentHashMap<String, AtomicLong> workerLastReport;
-	private final ConcurrentHashMap<String, Double> workerCoreEfficiency;
-	private final ConcurrentHashMap<String, Double> workerShaRatio;
+	//private final ConcurrentHashMap<String, AtomicLong> workerClockTime;
+	//private final ConcurrentHashMap<String, AtomicLong> workerLastReport;
+	//private final ConcurrentHashMap<String, Double> workerCoreEfficiency;
+	//private final ConcurrentHashMap<String, Double> workerShaRatio;
 
 	/**
 	 * One or more hashing threads.
@@ -134,7 +134,15 @@ public class Miner implements UncaughtExceptionHandler {
 	/**
 	 * The session length is the target parameter generally tuned against
 	 */
-	private double sessionLength = 5000.0d;
+	private long sessionLength = 5000l;
+
+	private final long MAX_SESSION_LENGTH = 14000l;
+
+	private final long REBALANCE_DELAY = 300000l;
+	private long lastRebalance;
+	private double lastRebalanceHashRate = Double.MAX_VALUE;
+	private double lastRebalanceTiC = 0.0d;
+	private long lastRebalanceSessionLength = 0l;
 
 	/**
 	 * Last time we checked with workers
@@ -145,10 +153,6 @@ public class Miner implements UncaughtExceptionHandler {
 	 * Count of all hashes produced by workers.
 	 */
 	protected final AtomicLong hashes;
-	/**
-	 * Count of hashes this reporting period.
-	 */
-	protected final AtomicLong currentHashes;
 
 	/**
 	 * Record of best DL so far this block
@@ -458,13 +462,13 @@ public class Miner implements UncaughtExceptionHandler {
 		this.deadWorkerSociety = new ConcurrentLinkedQueue<>();
 		this.deadWorkers = new AtomicLong(0l);
 
-		this.recentWorkers = new ConcurrentSkipListSet<>();
+		//this.recentWorkers = new ConcurrentSkipListSet<>();
 
 		this.blockFinds = new AtomicLong();
 		this.blockShares = new AtomicLong();
 
 		/* stats */
-		this.workerHashes = new ConcurrentHashMap<String, AtomicLong>();
+		//this.workerHashes = new ConcurrentHashMap<String, AtomicLong>();
 		//this.workerBlockShares = new ConcurrentHashMap<String, AtomicLong>();
 		//this.workerBlockFinds = new ConcurrentHashMap<String, AtomicLong>();
 		//this.workerRoundBestDL = new ConcurrentHashMap<String, AtomicLong>();
@@ -479,15 +483,16 @@ public class Miner implements UncaughtExceptionHandler {
 		/**
 		 * Computed argon vs nonargon ratio -- ideal is more time spent doing argon hashes, less other things!
 		 */
-		this.workerLastRatio = new ConcurrentHashMap<String, Double>();
-		this.workerRateHashes = new ConcurrentHashMap<String, AtomicLong>();
+		//this.workerLastRatio = new ConcurrentHashMap<String, Double>();
+		//this.workerRateHashes = new ConcurrentHashMap<String, AtomicLong>();
 		//this.workerRate = new ConcurrentHashMap<String, Double>();
-		this.workerAvgRate = new ConcurrentHashMap<String, Double>();
+		//this.workerAvgRate = new ConcurrentHashMap<String, Double>();
 
-		this.workerClockTime = new ConcurrentHashMap<String, AtomicLong>();
-		this.workerLastReport = new ConcurrentHashMap<String, AtomicLong>();
-		this.workerCoreEfficiency = new ConcurrentHashMap<String, Double>();
-		this.workerShaRatio = new ConcurrentHashMap<String, Double>();
+		//this.workerClockTime = new ConcurrentHashMap<String, AtomicLong>();
+		//this.workerLastReport = new ConcurrentHashMap<String, AtomicLong>();
+		//this.workerCoreEfficiency = new ConcurrentHashMap<String, Double>();
+		//this.workerShaRatio = new ConcurrentHashMap<String, Double>();
+		this.deadWorkerSummaries = new ConcurrentLinkedDeque<>();
 
 		/* end stats */
 
@@ -502,7 +507,6 @@ public class Miner implements UncaughtExceptionHandler {
 		/* end autotune */
 
 		this.hashes = new AtomicLong();
-		this.currentHashes = new AtomicLong();
 		this.bestDL = new AtomicLong(Long.MAX_VALUE);
 		this.sessionSubmits = new AtomicLong();
 		this.sessionRejects = new AtomicLong();
@@ -594,13 +598,6 @@ public class Miner implements UncaughtExceptionHandler {
 		this.hashers = Executors.newFixedThreadPool(
 				this.maxHashers > 0 ? this.maxHashers : Runtime.getRuntime().availableProcessors() - 1,
 				new AggressiveAffinityThreadFactory("HashMasher", true));
-				//Executors.privilegedThreadFactory());
-		/*this.hashers = Executors.newFixedThreadPool(
-				this.maxHashers > 0 ? this.maxHashers : Runtime.getRuntime().availableProcessors() - 1,
-				new AffinityThreadFactory("HashMasher", false, 
-					AffinityStrategies.DIFFERENT_CORE,
-					AffinityStrategies.DIFFERENT_SOCKET,
-					AffinityStrategies.SAME_SOCKET));*/
 
 		this.limit = 240; // default
 		this.worker = php_uniqid();
@@ -647,7 +644,7 @@ public class Miner implements UncaughtExceptionHandler {
 			Future<Boolean> update = this.updaters.submit(new Callable<Boolean>() {
 				public Boolean call() {
 					long executionTimeTracker = System.currentTimeMillis();
-					try { // ( AffinityLock af = AffinityLock.acquireLock() ) {
+					try {
 						if (cycles > 0 && (System.currentTimeMillis() - lastUpdate) < (UPDATING_DELAY * .5)) {
 							skips++;
 							return Boolean.FALSE;
@@ -709,9 +706,7 @@ public class Miner implements UncaughtExceptionHandler {
 							data = localData;
 							lastBlockUpdate = System.currentTimeMillis();
 							System.out.print("Best DL on last block: " + bestDL.getAndSet(Long.MAX_VALUE) + " ");
-							/*workerRoundBestDL.forEachValue(2, (dl) -> {
-								dl.set(Long.MAX_VALUE);
-							});*/ // reset best DL
+
 							endline = true;
 						}
 						BigInteger localDifficulty = new BigInteger((String) jsonData.get("difficulty"));
@@ -903,20 +898,20 @@ public class Miner implements UncaughtExceptionHandler {
 	 * @param workerId
 	 */
 	protected void workerInit(final String workerId) {
-		workerHashes.put(workerId, new AtomicLong(0l));
+		//workerHashes.put(workerId, new AtomicLong(0l));
 		//workerBlockShares.put(workerId, new AtomicLong(0l));
 		//workerBlockFinds.put(workerId, new AtomicLong(0l));
 		//workerArgonTime.put(workerId, new AtomicLong(0l));
 		//workerNonArgonTime.put(workerId, new AtomicLong(0l));
-		workerLastRatio.put(workerId, 0.0d);
-		workerRateHashes.put(workerId, new AtomicLong(0l));
+		//workerLastRatio.put(workerId, 0.0d);
+		//workerRateHashes.put(workerId, new AtomicLong(0l));
 		//workerRoundBestDL.put(workerId, new AtomicLong(Long.MAX_VALUE));
 		//workerRate.put(workerId, 0.0d);
-		workerAvgRate.put(workerId, 0.0d);
-		workerClockTime.put(workerId, new AtomicLong(0l));
-		workerCoreEfficiency.put(workerId, 0.0d);
-		workerShaRatio.put(workerId, 0.0d);
-		workerLastReport.put(workerId, new AtomicLong(System.currentTimeMillis()));
+		//workerAvgRate.put(workerId, 0.0d);
+		//workerClockTime.put(workerId, new AtomicLong(0l));
+		//workerCoreEfficiency.put(workerId, 0.0d);
+		//workerShaRatio.put(workerId, 0.0d);
+		//workerLastReport.put(workerId, new AtomicLong(System.currentTimeMillis()));
 	}
 
 	protected void workerFinish(HasherStats stats, Hasher worker) {
@@ -942,57 +937,70 @@ public class Miner implements UncaughtExceptionHandler {
 			AtomicLong adjust = new AtomicLong();
 			AtomicLong offload = new AtomicLong();
 			HasherStats worker = null;
+			Report report = new Report();
 			while ( (worker = this.deadWorkerSociety.poll()) != null) {
 				try {
+					report.runs ++;
+					
 					long allHashes = worker.hashes;
-					//workerHashes.get(workerId).set(allHashes); // need this?
 					newHashes.addAndGet(allHashes);
-
-					currentHashes.getAndAdd(allHashes); // need this?
 					hashes.getAndAdd(allHashes);
+					
+					report.hashes += allHashes;
 
 					long localDL = worker.bestDL;
-					long bDL = bestDL.getAndUpdate((dl) -> {
+					bestDL.getAndUpdate((dl) -> {
 						if (localDL < dl)
 							return localDL;
 						else
 							return dl;
 					});
-					//workerRoundBestDL.get(workerId).set(localDL < bDL ? bDL : localDL);
-
+					
+					report.shares += worker.shares;
+					report.finds += worker.finds;
+					
 					// shares are nonces < difficulty > 0 and >= 240
-					//workerBlockShares.get(workerId).set(hasher.getShares());
 					blockShares.addAndGet(worker.shares);
 					// finds are nonces < 240 (block discovery)
-					//workerBlockFinds.get(workerId).set(hasher.getFinds());
 					blockFinds.addAndGet(worker.finds);
 
+					
 					long argonTime = worker.argonTime;
-					//workerArgonTime.get(workerId).set(argonTime);
 					long shaTime = worker.shaTime;
 					long nonArgonTime = worker.nonArgonTime;
-					//workerNonArgonTime.get(workerId).set(nonArgonTime);
 					long fullTime = argonTime + nonArgonTime;
-					
+					/*double lastRatio = 0.0d;
 					if (fullTime > 0) {
-						workerLastRatio.put(worker.id, (double) argonTime / (double) fullTime);
+						lastRatio = (double) argonTime / (double) fullTime;
 					}
 					
+					double lastShaRatio = 0.0;
 					if (shaTime > 0 || fullTime > 0) {
-						workerShaRatio.put(worker.id, (double) shaTime / (double) fullTime);
-					}
+						lastShaRatio = (double) shaTime / (double) fullTime;
+					}*/
+					
+					report.argonTime += argonTime;
+					report.nonArgontime += nonArgonTime;
+					report.shaTime += shaTime;
 
 					long totalTime = worker.hashTime;
+
+					report.totalTime += totalTime;
 
 					long seconds = fullTime / 1000000000l;
 					//double rate = (double) allHashes / ((double) seconds);
 
 					//workerRate.put(workerId, rate);
-					workerAvgRate.put(worker.id, (double) allHashes / ((double) (totalTime / 1000d)));
+					
+					report.curHashPerSecond += (double) allHashes / ((double) (totalTime / 1000d));
 
-					workerCoreEfficiency.put(worker.id, (((double) seconds * 1000d) / ((double) totalTime)));
+					//workerAvgRate.put(worker.id, (double) allHashes / ((double) (totalTime / 1000d)));
+					
+					report.curTimeInCore += ((double) seconds * 1000d) / ((double) totalTime);
 
-					recentWorkers.add(worker.id);
+					//workerCoreEfficiency.put(worker.id, (((double) seconds * 1000d) / ((double) totalTime)));
+
+					//recentWorkers.add(worker.id);
 
 					if (totalTime < this.sessionLength) {
 						double gap = (this.sessionLength - totalTime) / this.sessionLength;
@@ -1020,7 +1028,7 @@ public class Miner implements UncaughtExceptionHandler {
 			}
 			this.lastSpeed.addAndGet((long) (((newHashes.doubleValue() * 10000000d) / (double) (wallTime))));
 			this.speedAccrue.incrementAndGet();
-
+			this.deadWorkerSummaries.push(report);
 		} catch (Exception e) {
 			System.err.println(
 					"There was an issue getting stats from the workers. I'll try again in a bit...: " + e.getMessage());
@@ -1030,7 +1038,8 @@ public class Miner implements UncaughtExceptionHandler {
 	private void printWorkerStats() {
 		System.out.println(String.format(" %7s %5s %5s %7s %8s %8s %8s %7s %5s %6s", "Streams", "Runs", "H/run", "Cur H/s",
 				"Cur TiC%", "Argon %", "Sha %", "Shares", "Finds", "Reject"));
-		int recentSize = recentWorkers.size();
+		int recentSize = 0;
+		long runs = 0;
 		double avgRate = 0.0d;
 		double coreEff = 0.0d;
 		double argEff = 0.0d;
@@ -1040,24 +1049,24 @@ public class Miner implements UncaughtExceptionHandler {
 		long failures = this.sessionRejects.get();
 
 		try {
-			for (int i = 0; i < recentSize; i++) {
-				String workerId = recentWorkers.pollFirst();
-				if (workerId != null) {
-					avgRate += workerAvgRate.get(workerId).doubleValue();
-					coreEff += workerCoreEfficiency.get(workerId).doubleValue() * 100d;
-					argEff += workerLastRatio.get(workerId).doubleValue() * 100d;
-					shaEff += workerShaRatio.get(workerId).doubleValue() * 100d;
-				}
+			LinkedList<Report> recent = new LinkedList<Report>();
+			while (recentSize++ < 3 && deadWorkerSummaries.peekFirst() != null) {
+				recent.addFirst(deadWorkerSummaries.pop());
 			}
+			
+			for (Report report : recent) {
+				runs += report.runs;
+				avgRate += report.curHashPerSecond;
+				coreEff += report.curTimeInCore * 100d;
+				argEff += ((double) report.argonTime / (double) (report.argonTime + report.nonArgontime)) * 100d;
+				shaEff += ((double) report.shaTime / (double) (report.argonTime + report.nonArgontime)) * 100d;
+				deadWorkerSummaries.push(report);
+			}
+			
 			System.out.println(String.format(" %7d %5d %5d %7.2f %8.3f %8.3f %8.3f %7d %5d %6d", this.hasherCount.get(),
-					recentSize, this.hashesPerSession, avgRate / (double) (recentSize / this.hasherCount.get()),
-					coreEff / (double) recentSize, argEff / (double) recentSize, shaEff / (double) recentSize, shares, finds, failures));
+					runs, this.hashesPerSession, avgRate / (double) (runs / this.hasherCount.get()),
+					coreEff / (double) runs, argEff / (double) runs, shaEff / (double) runs, shares, finds, failures));
 	
-			recentWorkers.clear();
-			workerAvgRate.clear();
-			workerCoreEfficiency.clear();
-			workerLastRatio.clear();
-			workerShaRatio.clear();
 		} catch (Throwable t) {
 			t.printStackTrace();
 		}

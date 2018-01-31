@@ -25,8 +25,10 @@ OR OTHER DEALINGS IN THE SOFTWARE.
 
  */
 package com.programmerdan.arionum.arionum_miner;
-package com.programmerdan.arionum.arionum_miner;
 
+/**
+ * Offload container for hasher runtime statistics
+ */
 public class HasherStats {
 	public long argonTime;
 	public long shaTime;

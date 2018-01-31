@@ -15,6 +15,7 @@ public class Profile implements Comparable<Profile> {
 	long samplePlannedEnd;
 	long sampleTime;
 	double rate;
+	double TiC;
 	
 	public Profile(int workers) {
 		workerTypes = new AdvMode[workers];
