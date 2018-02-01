@@ -28,6 +28,8 @@ package com.programmerdan.arionum.arionum_miner;
 
 /**
  * Offload container for hasher runtime statistics
+ * 
+ * @author ProgrammerDan (Daniel Boston)
  */
 public class HasherStats {
 	public long argonTime;
@@ -38,6 +40,7 @@ public class HasherStats {
 	public long shares;
 	public long finds;
 	public long hashTime;
+	public long scheduledTime;
 	public String id;
 	
 	public HasherStats(String id, long argonTime, long shaTime, long nonArgonTime, long hashTime, long hashes, long bestDL, long shares, long finds) {

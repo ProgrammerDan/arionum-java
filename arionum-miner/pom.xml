@@ -211,7 +211,7 @@
 		</dependency>
 		<dependency>
 			<groupId>de.mkammerer</groupId>
-			<artifactId>argon2-jvm</artifactId>
+			<artifactId>argon2-jvm-nolibs</artifactId>
 			<version>2.3</version>
 		</dependency>
 		<dependency>
@@ -225,5 +225,5 @@
 			<version>3.1.7</version>
 		</dependency>
 	</dependencies>
-	<description>A full featured java implementation of the arionum miner Portions derived from the php reference miner.</description>
+	<description>A full featured java implementation of the arionum miner. Portions derived from the php reference miner.</description>
 </project>

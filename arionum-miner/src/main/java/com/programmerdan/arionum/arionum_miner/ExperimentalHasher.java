@@ -34,14 +34,10 @@ import java.util.Base64;
 import java.util.Base64.Encoder;
 import java.util.Random;
 
-import de.mkammerer.argon2.Argon2;
-import de.mkammerer.argon2.Argon2Factory;
 import de.mkammerer.argon2.Argon2Factory.Argon2Types;
 import de.mkammerer.argon2.jna.Argon2Library;
 import de.mkammerer.argon2.jna.JnaUint32;
 import de.mkammerer.argon2.jna.Size_t;
-import net.openhft.affinity.AffinityLock;
-import net.openhft.affinity.AffinityStrategies;
 
 /**
  * The intent for this hasher is deeper self-inspection of running times of various components. It can be used as a testbed for comparative performance. It is not meant to be used for general use
@@ -55,7 +51,6 @@ import net.openhft.affinity.AffinityStrategies;
  * improvement.
  * 
  * Once a nonce is submitted, it is discarded and a new one generated, as the pool does not allow resubmission of prior nonces.
- * 
  * 
  * @author ProgrammerDan (Daniel Boston)
  *

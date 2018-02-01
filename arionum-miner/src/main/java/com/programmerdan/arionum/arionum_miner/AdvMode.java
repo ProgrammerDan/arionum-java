@@ -26,10 +26,16 @@ OR OTHER DEALINGS IN THE SOFTWARE.
  */
 package com.programmerdan.arionum.arionum_miner;
 
+/**
+ * Controls runmode
+ * 
+ * @author ProgrammerDan
+ *
+ */
 public enum AdvMode {
 	standard(true),
 	auto(false),
-	gpu(true),
+	gpu(false),
 	mixed(false);
 	
 	boolean use;

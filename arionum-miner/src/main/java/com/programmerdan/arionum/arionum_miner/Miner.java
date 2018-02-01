@@ -90,8 +90,8 @@ public class Miner implements UncaughtExceptionHandler {
 	 */
 	private final ConcurrentLinkedQueue<HasherStats> deadWorkerSociety;
 	private final AtomicLong deadWorkers;
-
 	private final ConcurrentLinkedDeque<Report> deadWorkerSummaries;
+	private final ConcurrentHashMap<String, Long> deadWorkerLives;
 	
 	//private final ConcurrentHashMap<String, AtomicLong> workerHashes;
 	/*
@@ -131,14 +131,16 @@ public class Miner implements UncaughtExceptionHandler {
 	 * Idea here is some soft profiling; hashesPerSession records how many hashes a particular worker accomplishes in a session, which starts at some initial value; then we tune it based on observed results.
 	 */
 	private long hashesPerSession = 10l;
+	private static final long MIN_HASHES_PER_SESSION = 5l;
 	/**
 	 * The session length is the target parameter generally tuned against
 	 */
-	private long sessionLength = 5000l;
+	private long sessionLength = 7500l; //5000l;
 
-	private final long MAX_SESSION_LENGTH = 14000l;
-
-	private final long REBALANCE_DELAY = 300000l;
+	private static final long MIN_SESSION_LENGTH = 5000l;
+	private static final long MAX_SESSION_LENGTH = 14000l;
+	private static final long REBALANCE_DELAY = 300000l;
+	
 	private long lastRebalance;
 	private double lastRebalanceHashRate = Double.MAX_VALUE;
 	private double lastRebalanceTiC = 0.0d;
@@ -378,6 +380,9 @@ public class Miner implements UncaughtExceptionHandler {
 						} else if ("benchmark".equalsIgnoreCase(type)) {
 							lines.add("benchmark");
 
+							System.out.println("Apologies, this mode is not available yet");
+							System.exit(1);
+							
 							System.out.print(" Pool to connect to? (leave empty for http://aropool.com) ");
 							String pool = console.nextLine();
 							if (pool == null || pool.trim().isEmpty()) {
@@ -416,6 +421,7 @@ public class Miner implements UncaughtExceptionHandler {
 							} else {
 								lines.add(iterations);
 							}
+							
 						} else {
 							System.err.println("I don't recognize that type. Aborting!");
 							System.exit(1);
@@ -461,40 +467,14 @@ public class Miner implements UncaughtExceptionHandler {
 		
 		this.deadWorkerSociety = new ConcurrentLinkedQueue<>();
 		this.deadWorkers = new AtomicLong(0l);
+		this.deadWorkerLives = new ConcurrentHashMap<String, Long>();
 
 		//this.recentWorkers = new ConcurrentSkipListSet<>();
 
 		this.blockFinds = new AtomicLong();
 		this.blockShares = new AtomicLong();
 
-		/* stats */
-		//this.workerHashes = new ConcurrentHashMap<String, AtomicLong>();
-		//this.workerBlockShares = new ConcurrentHashMap<String, AtomicLong>();
-		//this.workerBlockFinds = new ConcurrentHashMap<String, AtomicLong>();
-		//this.workerRoundBestDL = new ConcurrentHashMap<String, AtomicLong>();
-		/*
-		 * Clear this every 100 hashes and dump into the avg record
-		 */
-		//this.workerArgonTime = new ConcurrentHashMap<String, AtomicLong>();
-		/*
-		 * Clear this every 100 hashes and dump into the avg record
-		 */
-		//this.workerNonArgonTime = new ConcurrentHashMap<String, AtomicLong>();
-		/**
-		 * Computed argon vs nonargon ratio -- ideal is more time spent doing argon hashes, less other things!
-		 */
-		//this.workerLastRatio = new ConcurrentHashMap<String, Double>();
-		//this.workerRateHashes = new ConcurrentHashMap<String, AtomicLong>();
-		//this.workerRate = new ConcurrentHashMap<String, Double>();
-		//this.workerAvgRate = new ConcurrentHashMap<String, Double>();
-
-		//this.workerClockTime = new ConcurrentHashMap<String, AtomicLong>();
-		//this.workerLastReport = new ConcurrentHashMap<String, AtomicLong>();
-		//this.workerCoreEfficiency = new ConcurrentHashMap<String, Double>();
-		//this.workerShaRatio = new ConcurrentHashMap<String, Double>();
 		this.deadWorkerSummaries = new ConcurrentLinkedDeque<>();
-
-		/* end stats */
 
 		/* autotune */
 		activeProfile = null;
@@ -688,7 +668,7 @@ public class Miner implements UncaughtExceptionHandler {
 								.parse(new InputStreamReader(con.getInputStream()));
 
 						if (!"ok".equals((String) obj.get("status"))) {
-							System.out.println("Update failure: " + obj.get("status"));
+							System.out.println("Update failure: " + obj.get("status") + " We will try again shortly.");
 							con.disconnect();
 							failures++;
 							updateTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
@@ -733,7 +713,20 @@ public class Miner implements UncaughtExceptionHandler {
 						long sinceLastReport = System.currentTimeMillis() - lastReport;
 						if (sinceLastReport > 15000l) {
 							lastReport = System.currentTimeMillis();
-							System.out.print("MinDL: " + limit + " \n  Total Hashes: " + hashes.get()
+							System.out.print(String.format("\nNode: %s  MinDL: %d  BestDL: %d\n      Time on Block: %ds  Inverse Difficulty: %d", 
+											node, limit, bestDL.get(), ((System.currentTimeMillis() - lastBlockUpdate) / 1000), difficulty.longValue())
+									+ String.format("\n  Updates:   Last %ds: %d  Failed: %d  Avg Update RTT: %dms", (sinceLastReport / 1000), updates, failures + skips,
+											(updates > 0 ? (updateTimeAvg.get() / (updates + failures)) : 0))
+									+ String.format("\n  Shares:   Attempted: %d  Rejected: %d  Eff: %.2f%%  Avg Hash/nonce: %d  Avg Submit RTT: %dms", 
+											sessionSubmits.get(), sessionRejects.get(),
+											(sessionSubmits.get() > 0 ? 100d * ((double) (sessionSubmits.get() - sessionRejects.get()) / (double)sessionSubmits.get()) : 100.0d ),
+											(sessionSubmits.get() > 0 ? Math.floorDiv(hashes.get(), sessionSubmits.get()) : hashes.get()),
+											(sessionSubmits.get() > 0 ? submitTimeAvg.get() / (sessionSubmits.get() + sessionRejects.get()) : 0))
+									+ String.format("\n  Overall:  Hashes:  %d  Mining Time: %ds  Avg Speed: %sH/s  Reported Speed: %sH/s", 
+											hashes.get(), ((System.currentTimeMillis() - wallClockBegin) / 1000l), 
+											avgSpeed(wallClockBegin), cummSpeed)
+									);
+							/*System.out.print("MinDL: " + limit + " \n  Total Hashes: " + hashes.get()
 									+ "H  Overall Avg Speed: " + avgSpeed(wallClockBegin) + "H/s  Last Reported Speed: "
 									+ cummSpeed + "H/s\n  Updates last " + (sinceLastReport / 1000) + "s: " + updates
 									+ " Skipped: " + skips + " Failed: " + failures
@@ -756,7 +749,16 @@ public class Miner implements UncaughtExceptionHandler {
 									+ "\n  Time since last block update: "
 									+ ((System.currentTimeMillis() - lastBlockUpdate) / 1000) + "s"
 									+ " Best DL so far: " + bestDL.get() + "\n  Total time mining this session: "
-									+ ((System.currentTimeMillis() - wallClockBegin) / 1000l) + "s");
+									+ ((System.currentTimeMillis() - wallClockBegin) / 1000l) + "s");*/
+							updateTimeAvg.set(0);
+							updateTimeMax.set(Long.MIN_VALUE);
+							updateTimeMin.set(Long.MAX_VALUE);
+							updateParseTimeAvg.set(0);
+							updateParseTimeMax.set(Long.MIN_VALUE);
+							updateParseTimeMin.set(Long.MAX_VALUE);
+							submitParseTimeAvg.set(0);
+							submitParseTimeMax.set(Long.MIN_VALUE);
+							submitParseTimeMin.set(Long.MAX_VALUE);
 							skips = 0;
 							failures = 0;
 							updates = 0;
@@ -777,7 +779,7 @@ public class Miner implements UncaughtExceptionHandler {
 					} catch (IOException | ParseException e) {
 						lastUpdate = System.currentTimeMillis();
 						if (!(e instanceof SocketTimeoutException)) {
-							System.out.println("Non-fatal Update failure: " + e.getMessage());
+							System.out.println("Non-fatal Update failure: " + e.getMessage() + " We will try again in a moment.");
 						}
 						failures++;
 						updateTime(System.currentTimeMillis() - executionTimeTracker);
@@ -804,6 +806,7 @@ public class Miner implements UncaughtExceptionHandler {
 
 			if (!AdvMode.auto.equals(this.hasherMode) && this.hasherCount.get() < maxHashers) {
 				String workerId = this.deadWorkers.getAndIncrement() + "]" + php_uniqid();
+				this.deadWorkerLives.put(workerId, System.currentTimeMillis());
 				Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession, (long) this.sessionLength * 2l);
 				updateWorker(hasher);
 				this.hashers.submit(hasher);
@@ -837,8 +840,7 @@ public class Miner implements UncaughtExceptionHandler {
 					activeProfile = newActiveProfile;
 				}
 			}
-			// }
-
+		
 			try {
 				Thread.sleep(UPDATING_DELAY);
 			} catch (InterruptedException ie) {
@@ -893,33 +895,31 @@ public class Miner implements UncaughtExceptionHandler {
 	}
 
 	/**
-	 * When a new worker is started, we zero out its stats.
+	 * When a new worker is started, no-op for now.
 	 * 
 	 * @param workerId
 	 */
 	protected void workerInit(final String workerId) {
-		//workerHashes.put(workerId, new AtomicLong(0l));
-		//workerBlockShares.put(workerId, new AtomicLong(0l));
-		//workerBlockFinds.put(workerId, new AtomicLong(0l));
-		//workerArgonTime.put(workerId, new AtomicLong(0l));
-		//workerNonArgonTime.put(workerId, new AtomicLong(0l));
-		//workerLastRatio.put(workerId, 0.0d);
-		//workerRateHashes.put(workerId, new AtomicLong(0l));
-		//workerRoundBestDL.put(workerId, new AtomicLong(Long.MAX_VALUE));
-		//workerRate.put(workerId, 0.0d);
-		//workerAvgRate.put(workerId, 0.0d);
-		//workerClockTime.put(workerId, new AtomicLong(0l));
-		//workerCoreEfficiency.put(workerId, 0.0d);
-		//workerShaRatio.put(workerId, 0.0d);
-		//workerLastReport.put(workerId, new AtomicLong(System.currentTimeMillis()));
 	}
 
+	/**
+	 * When a worker is done, tosses its stats on the pile and initiates a new worker with updated runlength goals.
+	 * 
+	 * @param stats outgoing worker stats
+	 * @param worker outgoing worker
+	 */
 	protected void workerFinish(HasherStats stats, Hasher worker) {
 		// TODO do stuff with outgoing worker
 		this.deadWorkerSociety.offer(stats);
 		releaseWorker(worker.getID());
-		
+		try {
+			stats.scheduledTime = System.currentTimeMillis() - this.deadWorkerLives.remove(stats.id);
+		} catch (NullPointerException npe) {
+			System.err.println("Failed to determine full scheduled time for a worker");
+			stats.scheduledTime = stats.hashTime;
+		}
 		String workerId = this.deadWorkers.getAndIncrement() + "]" + php_uniqid();
+		this.deadWorkerLives.put(workerId, System.currentTimeMillis());
 		Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession, (long) this.sessionLength * 2l);
 		updateWorker(hasher);
 		this.hashers.submit(hasher);
@@ -927,7 +927,7 @@ public class Miner implements UncaughtExceptionHandler {
 	}
 
 	/**
-	 * Periodically we ask for updated information from all workers.
+	 * Periodically we tally up reports from finished worker tasks
 	 */
 	protected void refreshFromWorkers() {
 		long wallTime = System.currentTimeMillis() - lastWorkerReport;
@@ -964,12 +964,11 @@ public class Miner implements UncaughtExceptionHandler {
 					// finds are nonces < 240 (block discovery)
 					blockFinds.addAndGet(worker.finds);
 
-					
 					long argonTime = worker.argonTime;
 					long shaTime = worker.shaTime;
 					long nonArgonTime = worker.nonArgonTime;
 					long fullTime = argonTime + nonArgonTime;
-					/*double lastRatio = 0.0d;
+					double lastRatio = 0.0d;
 					if (fullTime > 0) {
 						lastRatio = (double) argonTime / (double) fullTime;
 					}
@@ -977,7 +976,9 @@ public class Miner implements UncaughtExceptionHandler {
 					double lastShaRatio = 0.0;
 					if (shaTime > 0 || fullTime > 0) {
 						lastShaRatio = (double) shaTime / (double) fullTime;
-					}*/
+					}
+					report.argonEff += lastRatio;
+					report.shaEff += lastShaRatio;
 					
 					report.argonTime += argonTime;
 					report.nonArgontime += nonArgonTime;
@@ -986,30 +987,23 @@ public class Miner implements UncaughtExceptionHandler {
 					long totalTime = worker.hashTime;
 
 					report.totalTime += totalTime;
+					
+					report.curWaitLoss += (double) (worker.scheduledTime - worker.hashTime) / (double) worker.scheduledTime;
 
 					long seconds = fullTime / 1000000000l;
-					//double rate = (double) allHashes / ((double) seconds);
-
-					//workerRate.put(workerId, rate);
 					
 					report.curHashPerSecond += (double) allHashes / ((double) (totalTime / 1000d));
-
-					//workerAvgRate.put(worker.id, (double) allHashes / ((double) (totalTime / 1000d)));
 					
 					report.curTimeInCore += ((double) seconds * 1000d) / ((double) totalTime);
 
-					//workerCoreEfficiency.put(worker.id, (((double) seconds * 1000d) / ((double) totalTime)));
-
-					//recentWorkers.add(worker.id);
-
 					if (totalTime < this.sessionLength) {
-						double gap = (this.sessionLength - totalTime) / this.sessionLength;
+						double gap = (double) (this.sessionLength - totalTime) / (double) this.sessionLength;
 						long recom = (long) (((double) allHashes) * .5 * gap);
 
 						adjust.addAndGet(recom);
 						offload.incrementAndGet();
 					} else if (totalTime > this.sessionLength) {
-						double gap = (totalTime - this.sessionLength) / (double) totalTime;
+						double gap = (double) (totalTime - this.sessionLength) / (double) totalTime;
 						long recom = (long) -(((double) allHashes) * .5 * gap);
 
 						adjust.addAndGet(recom);
@@ -1019,12 +1013,15 @@ public class Miner implements UncaughtExceptionHandler {
 					}
 
 				} catch (Throwable e) {
-					System.err.println("Pulling stats from finished worker " + worker.id + " failed! Message: " + e.getMessage());
+					System.err.println("Resolving stats from finished worker " + worker.id + " failed! Message: " + e.getMessage());
 					e.printStackTrace();
 				}
 			};
 			if (offload.get() > 0) {
 				this.hashesPerSession += (long) (adjust.doubleValue() / offload.doubleValue());
+				if (this.hashesPerSession < MIN_HASHES_PER_SESSION) {
+					this.hashesPerSession = MIN_HASHES_PER_SESSION;
+				}
 			}
 			this.lastSpeed.addAndGet((long) (((newHashes.doubleValue() * 10000000d) / (double) (wallTime))));
 			this.speedAccrue.incrementAndGet();
@@ -1036,36 +1033,40 @@ public class Miner implements UncaughtExceptionHandler {
 	}
 
 	private void printWorkerStats() {
-		System.out.println(String.format(" %7s %5s %5s %7s %8s %8s %8s %7s %5s %6s", "Streams", "Runs", "H/run", "Cur H/s",
-				"Cur TiC%", "Argon %", "Sha %", "Shares", "Finds", "Reject"));
+		System.out.println(String.format(" %7s %5s %5s %7s %7s %8s %8s %8s %7s %5s %6s", "Streams", "Runs", "H/run", "Cur H/s",
+				"Cur TiC%", "Cur WL%", "Argon %", "Sha %", "Shares", "Finds", "Reject"));
 		int recentSize = 0;
 		long runs = 0;
 		double avgRate = 0.0d;
 		double coreEff = 0.0d;
+		double waitEff = 0.0d;
 		double argEff = 0.0d;
 		double shaEff = 0.0d;
 		long shares = this.blockShares.get();
 		long finds = this.blockFinds.get();
 		long failures = this.sessionRejects.get();
-
+		int grabReports = (int) (15000.0 / (double) (Miner.UPDATING_DELAY * 2d));
+		if (grabReports < 3) grabReports = 3;
+		
 		try {
 			LinkedList<Report> recent = new LinkedList<Report>();
-			while (recentSize++ < 3 && deadWorkerSummaries.peekFirst() != null) {
+			while (recentSize++ < grabReports && deadWorkerSummaries.peekFirst() != null) {
 				recent.addFirst(deadWorkerSummaries.pop());
 			}
 			
 			for (Report report : recent) {
 				runs += report.runs;
 				avgRate += report.curHashPerSecond;
+				waitEff += report.curWaitLoss * 100d;
 				coreEff += report.curTimeInCore * 100d;
-				argEff += ((double) report.argonTime / (double) (report.argonTime + report.nonArgontime)) * 100d;
-				shaEff += ((double) report.shaTime / (double) (report.argonTime + report.nonArgontime)) * 100d;
+				argEff += report.argonEff * 100d;
+				shaEff += report.shaEff * 100d;
 				deadWorkerSummaries.push(report);
 			}
 			
-			System.out.println(String.format(" %7d %5d %5d %7.2f %8.3f %8.3f %8.3f %7d %5d %6d", this.hasherCount.get(),
-					runs, this.hashesPerSession, avgRate / (double) (runs / this.hasherCount.get()),
-					coreEff / (double) runs, argEff / (double) runs, shaEff / (double) runs, shares, finds, failures));
+			System.out.println(String.format(" %7d %5d %5d %7.2f %7.2f %8.3f %8.3f %8.3f %7d %5d %6d", this.hasherCount.get(),
+					runs, this.hashesPerSession, avgRate / (double) ((double) runs / (double) this.hasherCount.get()),
+					coreEff / (double) runs, waitEff / (double) runs, argEff / (double) runs, shaEff / (double) runs, shares, finds, failures));
 	
 		} catch (Throwable t) {
 			t.printStackTrace();
@@ -1115,9 +1116,8 @@ public class Miner implements UncaughtExceptionHandler {
 
 						out.writeBytes(data.toString());
 
-						System.out.println("Submitting to " + node + " a " + submitDL + " DL nonce: " + nonce
-								+ " argon: " + argon);
-						// System.out.println("Sending to " + extra.toString() + " Content:\n" + data.toString());
+						System.out.println("Submitting to " + node + " a " + submitDL + " DL nonce. \n  nonce: " + nonce
+								+ " argon: " + argon.substring(29));
 
 						out.flush();
 						out.close();
@@ -1177,7 +1177,7 @@ public class Miner implements UncaughtExceptionHandler {
 	}
 
 	private String speed() {
-		return String.format("%12.4f", (((double) this.lastSpeed.get() / 10000d) / (double) this.speedAccrue.get()));
+		return String.format("%.3f", (((double) this.lastSpeed.get() / 10000d) / (double) this.speedAccrue.get()));
 	}
 	private void clearSpeed() {
 		this.lastSpeed.set(0);
@@ -1185,7 +1185,7 @@ public class Miner implements UncaughtExceptionHandler {
 	}
 
 	private String avgSpeed(long clockBegin) {
-		return String.format("%12.4f",
+		return String.format("%.3f",
 				this.hashes.doubleValue() / (((double) (System.currentTimeMillis() - clockBegin)) / 1000d));
 	}
 
