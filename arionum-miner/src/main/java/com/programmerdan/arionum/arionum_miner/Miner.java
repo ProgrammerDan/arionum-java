@@ -54,7 +54,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -62,6 +61,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.fusesource.jansi.Ansi.Color;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
@@ -73,12 +73,24 @@ import de.mkammerer.argon2.jna.Argon2Library;
 import de.mkammerer.argon2.jna.JnaUint32;
 import de.mkammerer.argon2.jna.Size_t;
 
+import com.diogonunes.jcdp.color.api.Ansi.Attribute;
+import com.diogonunes.jcdp.color.api.Ansi.FColor;
+import com.diogonunes.jcdp.color.api.Ansi.Attribute.*;
+import com.diogonunes.jcdp.color.api.Ansi.BColor;
+import com.diogonunes.jcdp.color.api.Ansi.FColor.*;
+import com.diogonunes.jcdp.color.api.Ansi.BColor.*;
+
+
 /**
  * Miner wrapper.
  */
+@SuppressWarnings({ "unused" })
 public class Miner implements UncaughtExceptionHandler {
 
 	public static final long UPDATING_DELAY = 2000l;
+	
+	private CPrint coPrint;
+	
 	private int maxHashers;
 	/**
 	 * Non-main thread group that handles submitting nonces.
@@ -93,34 +105,6 @@ public class Miner implements UncaughtExceptionHandler {
 	private final ConcurrentLinkedDeque<Report> deadWorkerSummaries;
 	private final ConcurrentHashMap<String, Long> deadWorkerLives;
 	
-	//private final ConcurrentHashMap<String, AtomicLong> workerHashes;
-	/*
-	 * Clear this every 100 hashes and dump into the avg record
-	 */
-	//private final ConcurrentHashMap<String, AtomicLong> workerArgonTime;
-	/*
-	 * Clear this every 100 hashes and dump into the avg record
-	 */
-	//private final ConcurrentHashMap<String, AtomicLong> workerNonArgonTime;
-	/*
-	 * Computed argon vs nonargon ratio -- ideal is more time spent doing argon hashes, less other things!
-	 */
-	//private final ConcurrentHashMap<String, Double> workerLastRatio;
-	//private final ConcurrentHashMap<String, AtomicLong> workerRateHashes;
-	//private final ConcurrentHashMap<String, Double> workerRate;
-	//private final ConcurrentHashMap<String, Double> workerAvgRate;
-	//private final ConcurrentSkipListSet<String> recentWorkers;
-
-	/*
-	 * This is cummulative record of time the worker is aware of being alive and computing hashes.
-	 * 
-	 * Core efficiency is a measure of worker's known time vs. overall system time.
-	 */
-	//private final ConcurrentHashMap<String, AtomicLong> workerClockTime;
-	//private final ConcurrentHashMap<String, AtomicLong> workerLastReport;
-	//private final ConcurrentHashMap<String, Double> workerCoreEfficiency;
-	//private final ConcurrentHashMap<String, Double> workerShaRatio;
-
 	/**
 	 * One or more hashing threads.
 	 */
@@ -135,7 +119,7 @@ public class Miner implements UncaughtExceptionHandler {
 	/**
 	 * The session length is the target parameter generally tuned against
 	 */
-	private long sessionLength = 7500l; //5000l;
+	private long sessionLength = 7500l;
 
 	private static final long MIN_SESSION_LENGTH = 5000l;
 	private static final long MAX_SESSION_LENGTH = 14000l;
@@ -260,6 +244,7 @@ public class Miner implements UncaughtExceptionHandler {
 					while ((line = in.readLine()) != null) {
 						lines.add(line);
 					}
+					in.close();
 
 					miner = new Miner(lines.toArray(new String[] {}));
 				} else if (config.exists()) {
@@ -288,7 +273,7 @@ public class Miner implements UncaughtExceptionHandler {
 							System.out.println(
 									" Would you like autotuning to occur? This will try to maximize your H/s ");
 							System.out.println(
-									"   over the course of many minutes by adjusting hashers and cores. (y/N)");
+									"   over the course of many minutes by adjusting hashers and parameters. (y/N)");
 
 							if ("y".equalsIgnoreCase(console.nextLine())) {
 								lines.add("-1");
@@ -336,7 +321,7 @@ public class Miner implements UncaughtExceptionHandler {
 							System.out.println(
 									" Would you like autotuning to occur? This will try to maximize your H/s ");
 							System.out.println(
-									"   over the course of many minutes by adjusting hashers and cores. (y/N)");
+									"   over the course of many minutes by adjusting hashers and parameters. (y/N)");
 
 							if ("y".equalsIgnoreCase(console.nextLine())) {
 								lines.add("-1");
@@ -469,8 +454,6 @@ public class Miner implements UncaughtExceptionHandler {
 		this.deadWorkers = new AtomicLong(0l);
 		this.deadWorkerLives = new ConcurrentHashMap<String, Long>();
 
-		//this.recentWorkers = new ConcurrentSkipListSet<>();
-
 		this.blockFinds = new AtomicLong();
 		this.blockShares = new AtomicLong();
 
@@ -537,15 +520,17 @@ public class Miner implements UncaughtExceptionHandler {
 			if (AdvMode.auto.equals(this.hasherMode)) {
 				this.maxHashers = -1;
 			}
-
-			System.out.println("Active config:");
-			System.out.println("  type: " + this.type);
-			System.out.println("  node: " + this.node);
-			System.out.println("  public-key: " + this.publicKey);
-			System.out.println("  private-key: " + this.privateKey);
-			System.out.println("  hasher-count: " + this.maxHashers);
-			System.out.println("  hasher-mode: " + this.hasherMode);
-			System.out.println("  colors: " + this.colors);
+			
+			coPrint = new CPrint(colors);
+			coPrint.a(Attribute.BOLD).f(FColor.CYAN).ln("Active config:")
+				.clr().f(FColor.CYAN).p("  type: ").f(FColor.GREEN).ln(this.type)
+				.clr().f(FColor.CYAN).p("  node: ").f(FColor.GREEN).ln(this.node)
+				.clr().f(FColor.CYAN).p("  public-key: ").f(FColor.GREEN).ln(this.publicKey)
+				.clr().f(FColor.CYAN).p("  private-key: ").f(FColor.GREEN).ln(this.privateKey)
+				.clr().f(FColor.CYAN).p("  hasher-count: ").f(FColor.GREEN).ln(this.maxHashers)
+				.clr().f(FColor.CYAN).p("  hasher-mode: ").f(FColor.GREEN).ln(this.hasherMode)
+				.clr().f(FColor.CYAN).p("  colors: ").f(FColor.GREEN).ln(this.colors).clr();
+			
 		} catch (Exception e) {
 			System.err.println("Invalid configuration: " + (e.getMessage()));
 			System.err.println("  type: " + this.type);
@@ -567,13 +552,14 @@ public class Miner implements UncaughtExceptionHandler {
 			System.err.println(
 					"   [stable|basic|debug|experimental|auto] is type of hasher to run -- stable is always stable, basic is php ref, debug is chatty, experimental has no guarantees but is usually faster. Auto lets java miner pick best config. Default stable.");
 			System.err.println(
-					"   [true|false] is if colored output is enabled -- does not work on Windows systems unless in Cygwin bash shell. Default false.");
+					"   [true|false] is if colored output is enabled.");
 
 			System.exit(1);
 		}
 
-		System.out.println("You have " + Runtime.getRuntime().availableProcessors() + " processors vs. "
-				+ this.maxHashers + " hashers. ");
+		coPrint.f(FColor.WHITE).a(Attribute.DARK).p("You have ")
+			.a(Attribute.NONE).p(Runtime.getRuntime().availableProcessors()).a(Attribute.DARK).p(" processors vs. ")
+				.a(Attribute.DARK).p(this.maxHashers).a(Attribute.NONE).ln(" hashers. ").clr();
 
 		this.hashers = Executors.newFixedThreadPool(
 				this.maxHashers > 0 ? this.maxHashers : Runtime.getRuntime().availableProcessors() - 1,
@@ -594,7 +580,7 @@ public class Miner implements UncaughtExceptionHandler {
 		if (MinerType.pool.equals(this.type)) {
 			String decode = Utility.base58_decode(this.publicKey);
 			if (decode.length() != 64) {
-				System.err.println("ERROR: Invalid Arionum address!");
+				this.coPrint.a(Attribute.BOLD).f(FColor.RED).ln("ERROR: Invalid Arionum address!").clr();
 				System.exit(1);
 			}
 		}
@@ -655,7 +641,8 @@ public class Miner implements UncaughtExceptionHandler {
 						lastUpdate = System.currentTimeMillis();
 
 						if (status != HttpURLConnection.HTTP_OK) {
-							System.out.println("Update failure: " + con.getResponseMessage());
+							coPrint.updateLabel().p("Update failure: ")
+								.a(Attribute.UNDERLINE).f(FColor.RED).b(BColor.NONE).ln(con.getResponseMessage());
 							con.disconnect();
 							failures++;
 							updateTime(System.currentTimeMillis() - executionTimeTracker);
@@ -668,7 +655,9 @@ public class Miner implements UncaughtExceptionHandler {
 								.parse(new InputStreamReader(con.getInputStream()));
 
 						if (!"ok".equals((String) obj.get("status"))) {
-							System.out.println("Update failure: " + obj.get("status") + " We will try again shortly.");
+							coPrint.updateLabel().p("Update failure: ")
+								.a(Attribute.UNDERLINE).f(FColor.RED).b(BColor.NONE).p(obj.get(status))
+								.a(Attribute.LIGHT).f(FColor.CYAN).ln(". We will try again shortly!").clr();
 							con.disconnect();
 							failures++;
 							updateTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
@@ -678,20 +667,23 @@ public class Miner implements UncaughtExceptionHandler {
 						JSONObject jsonData = (JSONObject) obj.get("data");
 						String localData = (String) jsonData.get("block");
 						if (!localData.equals(data)) {
-							System.out
-									.print("Update transitioned to new block. " + (lastBlockUpdate > 0
-											? " Last block took: "
-													+ ((System.currentTimeMillis() - lastBlockUpdate) / 1000) + "s. "
-											: ""));
+							coPrint.updateLabel().p("Update transitioned to new block. ");
+							if (lastBlockUpdate > 0) {
+								coPrint.updateMsg().p("  Last block took: ")
+									.normData().p( ((System.currentTimeMillis() - lastBlockUpdate) / 1000)).unitLabel().p("s ").clr();
+							}
 							data = localData;
 							lastBlockUpdate = System.currentTimeMillis();
-							System.out.print("Best DL on last block: " + bestDL.getAndSet(Long.MAX_VALUE) + " ");
+							long bestDLLastBlock = bestDL.getAndSet(Long.MAX_VALUE);
+							coPrint.updateLabel().p("Best DL on last block: ")
+								.dlData().p(bestDLLastBlock).unitLabel().p(" ").clr();
 
 							endline = true;
 						}
 						BigInteger localDifficulty = new BigInteger((String) jsonData.get("difficulty"));
 						if (!localDifficulty.equals(difficulty)) {
-							System.out.print("Difficulty updated to " + localDifficulty + ". ");
+							coPrint.updateMsg().p("Difficulty updated to ")
+								.dlData().p(localDifficulty).unitLabel().p(". ").clr();
 							difficulty = localDifficulty;
 							endline = true;
 						}
@@ -713,43 +705,31 @@ public class Miner implements UncaughtExceptionHandler {
 						long sinceLastReport = System.currentTimeMillis() - lastReport;
 						if (sinceLastReport > 15000l) {
 							lastReport = System.currentTimeMillis();
-							System.out.print(String.format("\nNode: %s  MinDL: %d  BestDL: %d\n      Time on Block: %ds  Inverse Difficulty: %d", 
-											node, limit, bestDL.get(), ((System.currentTimeMillis() - lastBlockUpdate) / 1000), difficulty.longValue())
-									+ String.format("\n  Updates:   Last %ds: %d  Failed: %d  Avg Update RTT: %dms", (sinceLastReport / 1000), updates, failures + skips,
-											(updates > 0 ? (updateTimeAvg.get() / (updates + failures)) : 0))
-									+ String.format("\n  Shares:   Attempted: %d  Rejected: %d  Eff: %.2f%%  Avg Hash/nonce: %d  Avg Submit RTT: %dms", 
-											sessionSubmits.get(), sessionRejects.get(),
-											(sessionSubmits.get() > 0 ? 100d * ((double) (sessionSubmits.get() - sessionRejects.get()) / (double)sessionSubmits.get()) : 100.0d ),
-											(sessionSubmits.get() > 0 ? Math.floorDiv(hashes.get(), sessionSubmits.get()) : hashes.get()),
-											(sessionSubmits.get() > 0 ? submitTimeAvg.get() / (sessionSubmits.get() + sessionRejects.get()) : 0))
-									+ String.format("\n  Overall:  Hashes:  %d  Mining Time: %ds  Avg Speed: %sH/s  Reported Speed: %sH/s", 
-											hashes.get(), ((System.currentTimeMillis() - wallClockBegin) / 1000l), 
-											avgSpeed(wallClockBegin), cummSpeed)
-									);
-							/*System.out.print("MinDL: " + limit + " \n  Total Hashes: " + hashes.get()
-									+ "H  Overall Avg Speed: " + avgSpeed(wallClockBegin) + "H/s  Last Reported Speed: "
-									+ cummSpeed + "H/s\n  Updates last " + (sinceLastReport / 1000) + "s: " + updates
-									+ " Skipped: " + skips + " Failed: " + failures
-									+ (updates > 0 ? "\n  Updates took avg: "
-											+ (updateTimeAvg.getAndSet(0) / (updates + failures)) + "ms  max: "
-											+ (updateTimeMax.getAndSet(Long.MIN_VALUE)) + "ms  min: "
-											+ (updateTimeMin.getAndSet(Long.MAX_VALUE)) + "ms" : "")
-									+ (sessionSubmits.get() > 0 ? "\n Found " + sessionSubmits.get() + " nonces, "
-											+ sessionRejects.get() + " rejected" + "\n  Submits took avg: "
-											+ (submitTimeAvg.get() / (sessionSubmits.get() + sessionRejects.get()))
-											+ "ms  max: " + (submitTimeMax.get()) + "ms  min: " + (submitTimeMin.get())
-											+ "\n  Parsing submits replies took avg: "
-											+ (submitParseTimeAvg.get() / (sessionSubmits.get() + sessionRejects.get()))
-											+ "ms  max: " + (submitParseTimeMax.get()) + "ms  min: "
-											+ (submitParseTimeMin.get()) : "")
-									+ (updates > 0 ? "\n  Parsing updates took avg: "
-											+ (updateParseTimeAvg.getAndSet(0) / (updates + failures)) + "ms  max: "
-											+ (updateParseTimeMax.getAndSet(Long.MIN_VALUE)) + "ms  min: "
-											+ (updateParseTimeMin.getAndSet(Long.MAX_VALUE)) + "ms" : "")
-									+ "\n  Time since last block update: "
-									+ ((System.currentTimeMillis() - lastBlockUpdate) / 1000) + "s"
-									+ " Best DL so far: " + bestDL.get() + "\n  Total time mining this session: "
-									+ ((System.currentTimeMillis() - wallClockBegin) / 1000l) + "s");*/
+							coPrint.ln().info().p("Node: ").textData().fs(node).p(" ")
+								.info().p("MinDL: ").dlData().fd(limit).p("  ")
+								.info().p("BestDL: ").dlData().fd(bestDL.get()).ln()
+								.p("      ").info().p("Time on Block: ").normData().fd(((System.currentTimeMillis() - lastBlockUpdate) / 1000)).unitLabel().p("s  ")
+								.info().p("Inverse Difficulty: ").dlData().fd(difficulty.longValue()).clr();
+							coPrint.ln().info().p("  Updates:   Last ").normData().fd((sinceLastReport / 1000))
+										.unitLabel().p("s").info().p(": ").normData().fd(updates)
+									.info().p("  Failed: ").normData().fd(failures+skips)
+									.info().p("  Avg Update RTT: ").normData().fd((updates > 0 ? (updateTimeAvg.get() / (updates + failures)) : 0))
+										.unitLabel().p("ms").clr();
+							coPrint.ln().info().p("  Shares:  Attempted: ").normData().fd(sessionSubmits.get())
+									.info().p("  Rejected: ").normData().fd(sessionRejects.get())
+									.info().p("  Eff: ").normData().fp("%.2f", (sessionSubmits.get() > 0 ? 100d * ((double) (sessionSubmits.get() - sessionRejects.get()) / (double)sessionSubmits.get()) : 100.0d ))
+										.unitLabel().p("%")
+									.info().p("  Avg Hash/nonce: ").normData().fd((sessionSubmits.get() > 0 ? Math.floorDiv(hashes.get(), sessionSubmits.get()) : hashes.get()))
+									.info().p("  Avg Submit RTT: ").normData().fd((sessionSubmits.get() > 0 ? submitTimeAvg.get() / (sessionSubmits.get() + sessionRejects.get()) : 0))
+										.unitLabel().p("ms").clr();
+							coPrint.ln().info().p("  Overall:  Hashes: ").normData().fd(hashes.get())
+									.info().p("  Mining Time: ").normData().fd(((System.currentTimeMillis() - wallClockBegin) / 1000l))
+										.unitLabel().p("s")
+									.info().p("  Avg Speed: ").normData().fs(avgSpeed(wallClockBegin))
+										.unitLabel().p("H/s")
+									.info().p("  Reported Speed: ").normData().fs(cummSpeed)
+										.unitLabel().p("H/s").clr();
+							
 							updateTimeAvg.set(0);
 							updateTimeMax.set(Long.MIN_VALUE);
 							updateTimeMin.set(Long.MAX_VALUE);
@@ -779,7 +759,7 @@ public class Miner implements UncaughtExceptionHandler {
 					} catch (IOException | ParseException e) {
 						lastUpdate = System.currentTimeMillis();
 						if (!(e instanceof SocketTimeoutException)) {
-							System.out.println("Non-fatal Update failure: " + e.getMessage() + " We will try again in a moment.");
+							coPrint.updateLabel().p("Non-fatal Update failure: ").textData().p(e.getMessage()).updateMsg().ln(" We will try again in a moment.").clr();
 						}
 						failures++;
 						updateTime(System.currentTimeMillis() - executionTimeTracker);
@@ -793,10 +773,10 @@ public class Miner implements UncaughtExceptionHandler {
 						firstRun = false;
 					}
 				} catch (InterruptedException | ExecutionException e) {
-					System.err.println("Unable to successfully complete first update: " + e.getMessage());
+					coPrint.a(Attribute.BOLD).f(FColor.RED).p("Unable to successfully complete first update: ").textData().ln(e.getMessage()).clr();
 				} finally {
 					if (firstRun) { // failure!
-						System.out.println("Unable to contact node in pool, please try again in a moment.");
+						coPrint.a(Attribute.BOLD).f(FColor.RED).ln("Unable to contact node in pool, please try again in a moment.").clr();
 						active = false;
 						break;
 					}
@@ -833,7 +813,7 @@ public class Miner implements UncaughtExceptionHandler {
 				}
 
 				if (activeProfile == null || !newActiveProfile.equals(activeProfile)) {
-					System.out.println("About to evaluate profile " + newActiveProfile.toString());
+					coPrint.updateMsg().p("About to evaluate profile ").textData().ln(newActiveProfile.toString()).clr();
 
 					// reconfigure!
 
@@ -846,7 +826,7 @@ public class Miner implements UncaughtExceptionHandler {
 			} catch (InterruptedException ie) {
 				active = false;
 				// interruption shuts us down.
-				System.out.println("Interruption detection, shutting down.");
+				coPrint.a(Attribute.BOLD).f(FColor.RED).ln("Interruption detection, shutting down.").clr();
 			}
 
 			if (cycles == 30) {
@@ -909,13 +889,12 @@ public class Miner implements UncaughtExceptionHandler {
 	 * @param worker outgoing worker
 	 */
 	protected void workerFinish(HasherStats stats, Hasher worker) {
-		// TODO do stuff with outgoing worker
 		this.deadWorkerSociety.offer(stats);
 		releaseWorker(worker.getID());
 		try {
 			stats.scheduledTime = System.currentTimeMillis() - this.deadWorkerLives.remove(stats.id);
 		} catch (NullPointerException npe) {
-			System.err.println("Failed to determine full scheduled time for a worker");
+			coPrint.a(Attribute.BOLD).f(FColor.RED).ln("Failed to determine full scheduled time for a worker").clr();
 			stats.scheduledTime = stats.hashTime;
 		}
 		String workerId = this.deadWorkers.getAndIncrement() + "]" + php_uniqid();
@@ -1013,7 +992,8 @@ public class Miner implements UncaughtExceptionHandler {
 					}
 
 				} catch (Throwable e) {
-					System.err.println("Resolving stats from finished worker " + worker.id + " failed! Message: " + e.getMessage());
+					coPrint.a(Attribute.BOLD).f(FColor.RED).p("Resolving stats from finished worker ").textData().p(worker.id)
+						.a(Attribute.BOLD).f(FColor.RED).p(" failed! Message: ").textData().ln(e.getMessage()).clr();
 					e.printStackTrace();
 				}
 			};
@@ -1027,14 +1007,28 @@ public class Miner implements UncaughtExceptionHandler {
 			this.speedAccrue.incrementAndGet();
 			this.deadWorkerSummaries.push(report);
 		} catch (Exception e) {
-			System.err.println(
-					"There was an issue getting stats from the workers. I'll try again in a bit...: " + e.getMessage());
+			coPrint.a(Attribute.BOLD).f(FColor.RED).p("There was an issue getting stats from the workers. I'll try again in a bit...: ")
+					.textData().ln(e.getMessage()).clr();
 		}
 	}
 
-	private void printWorkerStats() {
-		System.out.println(String.format(" %7s %5s %5s %7s %7s %8s %8s %8s %7s %5s %6s", "Streams", "Runs", "H/run", "Cur H/s",
-				"Cur TiC%", "Cur WL%", "Argon %", "Sha %", "Shares", "Finds", "Reject"));
+	private void printWorkerStats(boolean headers) {
+		if (headers) {
+			coPrint.p(" ").headers().fp("%7s", "Streams").clr()
+				.p(" ").headers().fp("%5s", "Runs").clr()
+				.p(" ").headers().fp("%5s", "H/run").clr()
+				.p(" ").headers().fp("%7s", "Cur H/s").clr()
+				.p(" ").headers().fp("%8s", "Cur TiC%").clr()
+				.p(" ").headers().fp("%8s", "Cur WL%").clr()
+				.p(" ").headers().fp("%8s", "Argon %").clr()
+				.p(" ").headers().fp("%8s", "Sha %").clr()
+				.p(" ").headers().fp("%7s", "Shares").clr()
+				.p(" ").headers().fp("%5s", "Finds").clr()
+				.p(" ").headers().fp("%6s", "Reject").clr().ln();
+		}
+		
+		/*System.out.println(String.format(" %7s %5s %5s %7s %7s %8s %8s %8s %7s %5s %6s", "Streams", "Runs", "H/run", "Cur H/s",
+				"Cur TiC%", "Cur WL%", "Argon %", "Sha %", "Shares", "Finds", "Reject"));*/
 		int recentSize = 0;
 		long runs = 0;
 		double avgRate = 0.0d;
@@ -1063,17 +1057,29 @@ public class Miner implements UncaughtExceptionHandler {
 				shaEff += report.shaEff * 100d;
 				deadWorkerSummaries.push(report);
 			}
-			
-			System.out.println(String.format(" %7d %5d %5d %7.2f %7.2f %8.3f %8.3f %8.3f %7d %5d %6d", this.hasherCount.get(),
+
+			coPrint.p(" ").normData().fp("%7d", this.hasherCount.get()).clr()
+				.p(" ").normData().fp("%5d", runs).clr()
+				.p(" ").normData().fp("%5d", this.hashesPerSession).clr()
+				.p(" ").normData().fp("%7.2f", avgRate / (double) ((double) runs / (double) this.hasherCount.get())).clr()
+				.p(" ").normData().fp("%8.2f", coreEff / (double) runs).clr()
+				.p(" ").normData().fp("%8.3f", waitEff / (double) runs).clr()
+				.p(" ").normData().fp("%8.3f", argEff / (double) runs).clr()
+				.p(" ").normData().fp("%8.3f", shaEff / (double) runs).clr()
+				.p(" ").dlData().fp("%7d", shares).clr()
+				.p(" ").dlData().fp("%5d", finds).clr()
+				.p(" ").dlData().fp("%6d", failures).clr().ln();
+
+			/*System.out.println(String.format(" %7d %5d %5d %7.2f %7.2f %8.3f %8.3f %8.3f %7d %5d %6d", this.hasherCount.get(),
 					runs, this.hashesPerSession, avgRate / (double) ((double) runs / (double) this.hasherCount.get()),
-					coreEff / (double) runs, waitEff / (double) runs, argEff / (double) runs, shaEff / (double) runs, shares, finds, failures));
+					coreEff / (double) runs, waitEff / (double) runs, argEff / (double) runs, shaEff / (double) runs, shares, finds, failures));*/
 	
 		} catch (Throwable t) {
 			t.printStackTrace();
 		}
 
 		if (AdvMode.auto.equals(this.hasherMode)) {
-			System.out.println("In auto-adjust mode. Next readjustment in " + "" + "s.");
+			coPrint.a(Attribute.BOLD).f(FColor.RED).p("In auto-adjust mode. Next readjustment in ").normData().p("").unitLabel().ln("s").clr();
 		}
 	}
 
@@ -1095,7 +1101,6 @@ public class Miner implements UncaughtExceptionHandler {
 						con.setDoOutput(true);
 						DataOutputStream out = new DataOutputStream(con.getOutputStream());
 
-						// TODO: make elegant.
 						StringBuilder data = new StringBuilder();
 
 						// argon, just the hash bit since params are universal
@@ -1116,8 +1121,12 @@ public class Miner implements UncaughtExceptionHandler {
 
 						out.writeBytes(data.toString());
 
-						System.out.println("Submitting to " + node + " a " + submitDL + " DL nonce. \n  nonce: " + nonce
-								+ " argon: " + argon.substring(29));
+						coPrint.updateLabel().a(Attribute.LIGHT).p("Submitting to ").textData().fs(node).p(" ")
+							.updateLabel().a(Attribute.LIGHT).p(" a ").dlData().p(submitDL)
+							.updateLabel().a(Attribute.LIGHT).ln(" DL nonce.").p("  nonce: ").textData().p(nonce)
+							.updateLabel().a(Attribute.LIGHT).p(" argon: ").textData().ln(argon.substring(29)).clr();
+						/*System.out.println("Submitting to " + node + " a " + submitDL + " DL nonce. \n  nonce: " + nonce
+								+ " argon: " + argon.substring(29));*/
 
 						out.flush();
 						out.close();
@@ -1126,7 +1135,10 @@ public class Miner implements UncaughtExceptionHandler {
 
 						int status = con.getResponseCode();
 						if (status != HttpURLConnection.HTTP_OK) {
-							System.out.println("Submit of " + nonce + " failure: " + con.getResponseMessage());
+							coPrint.updateLabel().a(Attribute.LIGHT).p("Submit of ").textData().p(nonce)
+								.updateLabel().a(Attribute.LIGHT).p(" failure: ").textData().f(FColor.RED).p(con.getResponseMessage())
+								.updateLabel().a(Attribute.LIGHT).ln(". We will retry.").clr();
+							/*System.out.println("Submit of " + nonce + " failure: " + con.getResponseMessage());*/
 							con.disconnect();
 							failures++;
 							submitTime(System.currentTimeMillis() - executionTimeTracker);
@@ -1138,10 +1150,19 @@ public class Miner implements UncaughtExceptionHandler {
 
 							if (!"ok".equals((String) obj.get("status"))) {
 								sessionRejects.incrementAndGet();
-								System.out.println("Submit of " + nonce + " rejected, nonce did not confirm: "
-										+ (String) obj.get("status"));
+
+								coPrint.updateLabel().a(Attribute.LIGHT).p("Submit of ").textData().p(nonce).p(" ")
+									.clr().a(Attribute.BOLD).a(Attribute.UNDERLINE).f(FColor.RED).p("rejected")
+									.clr().updateLabel().a(Attribute.LIGHT).p(", nonce did not confirm: ")
+									.textData().f(FColor.RED).ln((String) obj.get("status")).clr();
+
+								/*System.out.println("Submit of " + nonce + " rejected, nonce did not confirm: "
+										+ (String) obj.get("status"));*/
 							} else {
-								System.out.println("Submit of " + nonce + " confirmed!");
+								coPrint.updateLabel().a(Attribute.LIGHT).p("Submit of ").textData().p(nonce)
+									.updateLabel().a(Attribute.LIGHT).ln(" confirmed!").clr();
+								
+								//System.out.println("Submit of " + nonce + " confirmed!");
 							}
 							notDone = false;
 
@@ -1151,14 +1172,20 @@ public class Miner implements UncaughtExceptionHandler {
 						}
 					} catch (IOException | ParseException ioe) {
 						failures++;
-						System.err.println("Non-fatal but tragic: Failed during construction or receipt of submission: "
-								+ ioe.getMessage());
+
+						coPrint.updateLabel().a(Attribute.LIGHT).p("Non-fatal but tragic: Failed during construction or receipt of submission: ")
+							.textData().f(FColor.RED).p(ioe.getMessage())
+							.updateLabel().a(Attribute.LIGHT).ln(". We will retry.").clr();
+
+						/*System.err.println("Non-fatal but tragic: Failed during construction or receipt of submission: "
+								+ ioe.getMessage());*/
 						submitTime(System.currentTimeMillis() - executionTimeTracker);
 					}
 					if (failures > 5) {
 						notDone = false;
-						System.err.println(
-								"After more then five failed attempts to submit this nonce, we are giving up.");
+						coPrint.textData().f(FColor.RED).ln("After more then five failed attempts to submit this nonce, we are giving up.").clr();
+						/*System.err.println(
+								"After more then five failed attempts to submit this nonce, we are giving up.");*/
 					}
 				}
 
@@ -1280,354 +1307,16 @@ public class Miner implements UncaughtExceptionHandler {
 		System.out.println("Utility Test on " + this.publicKey);
 		String refKey = this.publicKey;
 
-		/*
-		 * String decode = Utility.base58_decode(refKey); BigInteger decInt = Utility.base58_decodeInt(refKey); System.out.println("  base58_decode: (" + decode.length() + ") " + decode ); System.out.println("  base58_decodeInt: " +
-		 * decInt.toString() + " (" + decInt.doubleValue() + ") ");
-		 * 
-		 * 
-		 * byte[] nonce = new byte[32]; String encNonce = null; String encNonce2 = null; String encNonce3 = null; String encNonce4 = null; SecureRandom random = new SecureRandom(); StringBuilder sb = new StringBuilder(); Encoder enc =
-		 * Base64.getEncoder(); char[] arr = null;
-		 * 
-		 * 
-		 * long a = 0l; long b = 0l; long c = 0l; long d = 0l;
-		 * 
-		 * for (int i = 0; i < this.maxHashers; i++) { random.nextBytes(nonce); encNonce = enc.encodeToString(nonce); encNonce2 = enc.encodeToString(nonce); encNonce3 = enc.encodeToString(nonce); encNonce4 = enc.encodeToString(nonce);
-		 * 
-		 * long s = System.currentTimeMillis(); encNonce = encNonce.replaceAll("[^a-zA-Z0-9]", ""); // TODO: static test vs other impls a += System.currentTimeMillis() - s;
-		 * 
-		 * s = System.currentTimeMillis(); sb = new StringBuilder(encNonce2.length()); arr = encNonce2.toCharArray(); for (char ar : arr) { if (ar >= '0' && ar <= '9' || ar >= 'a' && ar <= 'z' || ar >= 'A' && ar <= 'Z') { sb.append(ar); } }
-		 * encNonce2 = sb.toString(); b += System.currentTimeMillis() - s; assert encNonce.equals(encNonce2);
-		 * 
-		 * s = System.currentTimeMillis(); StringBuilder sb2 = new StringBuilder(encNonce3.length()); char ar = encNonce3.charAt(0); for (int j = 0; j < encNonce3.length() - 1; ar = encNonce3.charAt(++j)) { if (ar >= '0' && ar <= '9' || ar
-		 * >= 'a' && ar <= 'z' || ar >= 'A' && ar <= 'Z') { sb2.append(ar); } } encNonce3 = sb2.toString(); c += System.currentTimeMillis() - s; assert encNonce.equals(encNonce3);
-		 * 
-		 * s = System.currentTimeMillis(); StringBuilder sb3 = new StringBuilder(encNonce4.length()); encNonce4.chars().forEach( (aj) -> { if (aj >= '0' && aj <= '9' || aj >= 'a' && aj <= 'z' || aj >= 'A' && aj <= 'Z') { sb3.append((char)
-		 * aj); } }); encNonce4 = sb3.toString(); d += System.currentTimeMillis() - s; assert encNonce.equals(encNonce4); }
-		 * 
-		 * System.out.println("stripFunction Iterations: " + this.maxHashers + " a: " + a + " b: " + b + " c: " + c + " d: " + d);
-		 */
-
-		final JnaUint32 iterations = new JnaUint32(4);
-		final JnaUint32 memory = new JnaUint32(16384);
-		final JnaUint32 parallelism = new JnaUint32(4);
-		final JnaUint32 saltLenI = new JnaUint32(16);
-		final JnaUint32 hashLenI = new JnaUint32(32);
-		final Size_t saltLen = new Size_t(16l);
-		final Size_t hashLen = new Size_t(32l);
-
-		final Size_t encLen = Argon2Library.INSTANCE.argon2_encodedlen(iterations, memory, parallelism, saltLenI,
-				hashLenI, Argon2Types.ARGON2i.getJnaType());
-		final byte[] encoded = new byte[encLen.intValue()];
-		byte[] salt = new byte[saltLen.intValue()];
-
-		// warmup the cpu
-		for (int i = 0; i < this.maxHashers * 100; i++) {
-			new Random().nextBytes(salt);
-		}
-
-		new Random().nextBytes(salt);
-		byte[] hashBaseBuffer = "thisisahashofatypicalsizebutwouldntyouknowititshardtothinkofsillystufftotypetotestasystemlikethissinceweassumethingsworkmostofthetimevenwhenwehavenoreasontothinkthatbuttestingiscritical"
-				.getBytes();
-		Size_t hashBaseBufferSize = new Size_t(hashBaseBuffer.length);
-
-		difficulty = new BigInteger("100000000");
-
-		long rawtime = 0l;
-		long nortime = 0l;
-		long cpytime = 0l;
-		long trntime = 0l;
-		long shatime = 0l;
-		long dltime = 0l;
-
-		Argon2Library argon2lib = Argon2Library.INSTANCE;
-		Argon2 argon2 = Argon2Factory.create(Argon2Types.ARGON2i);
-		MessageDigest sha512 = null;
-		try {
-			sha512 = MessageDigest.getInstance("SHA-512");
-		} catch (NoSuchAlgorithmException e1) {
-			System.err.println("Unable to find SHA-512 algorithm! Fatal error.");
-			e1.printStackTrace();
-			System.exit(1);
-			active = false;
-		}
-
-		argon2.hash(4, 16384, 4, hashBaseBuffer.toString());
-
-		argon2lib.argon2i_hash_encoded(iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize, salt,
-				saltLen, hashLen, encoded, encLen);
-
-		for (int j = 0; j < 10; j++) {
-
-			long hashS = System.nanoTime();
-
-			for (int i = 0; i < this.maxHashers / 10; i++) {
-				argon2.hash(4, 16384, 4, hashBaseBuffer.toString());
-			}
-
-			long hashE = System.nanoTime();
-
-			System.out.print(" " + (hashE - hashS));
-			// System.out.println(String.format("norlib %dns ea.", ((hashE - hashS) / ( this.maxHashers/10))));
-			nortime += (hashE - hashS);
-
-			hashS = System.nanoTime();
-
-			for (int i = 0; i < this.maxHashers / 10; i++) {
-				argon2lib.argon2i_hash_encoded(iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize,
-						salt, saltLen, hashLen, encoded, encLen);
-			}
-
-			hashE = System.nanoTime();
-
-			System.out.print(" " + (hashE - hashS));
-			// System.out.println(String.format("rawlib %dns ea.", ((hashE - hashS) / (this.maxHashers/1))));
-			rawtime += (hashE - hashS);
-
-			int offset = hashBaseBuffer.length - encoded.length;
-
-			hashS = System.nanoTime();
-
-			for (int i = 0; i < this.maxHashers * 100; i++) {
-				System.arraycopy(encoded, 0, hashBaseBuffer, offset, encLen.intValue());
-			}
-
-			hashE = System.nanoTime();
-
-			cpytime += (hashE - hashS);
-
-			StringBuilder hashBase = null;
-			String base;
-			byte[] byteBase = new byte[60];
-			hashS = System.nanoTime();
-			for (int i = 0; i < this.maxHashers * 100; i++) {
-				hashBase = new StringBuilder(hashBaseBuffer.length + encoded.length); // size of key + none + difficult + argon + data + spacers
-				hashBase.append(new String(hashBaseBuffer));
-				hashBase.append(new String(encoded));
-				base = hashBase.toString();
-				byteBase = base.getBytes();
-			}
-			hashE = System.nanoTime();
-
-			trntime += (hashE - hashS);
-
-			hashBaseBuffer = "thisisahashofatypicalsizebutwouldntyouknowititshardtothinkofsillystufftotypetotestasystemlikethissinceweassumethingsworkmostofthetimevenwhenwehavenoreasontothinkthatbuttestingiscritical"
-					.getBytes();
-
-			hashS = System.nanoTime();
-			for (int i = 0; i < this.maxHashers / 10; i++) {
-				byteBase = sha512.digest(hashBaseBuffer);
-				for (int q = 0; i < 5; i++) {
-					byteBase = sha512.digest(byteBase);
-				}
-			}
-			hashE = System.nanoTime();
-			shatime += (hashE - hashS);
-
-			hashS = System.nanoTime();
-			for (int i = 0; i < this.maxHashers * 100; i++) {
-				StringBuilder duration = new StringBuilder(25);
-				duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
-						.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
-						.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
-
-				long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
-			}
-			hashE = System.nanoTime();
-
-			dltime += (hashE - hashS);
-
-			System.out.println("Round " + j);
-		}
-
-		System.out.println(String.format("rawlib %dns ea.", (rawtime / this.maxHashers)));
-		System.out.println(String.format("norlib %dns ea.", (nortime / this.maxHashers)));
-		System.out.println(String.format("arraycpy %dns ea.", (cpytime / (this.maxHashers * 1000))));
-		System.out.println(String.format("stringtr %dns ea.", (trntime / (this.maxHashers * 1000))));
-		System.out.println(String.format("shalib %dns ea.", (shatime / this.maxHashers)));
-		System.out.println(String.format("dlcomp %dns ea.", (dltime / (this.maxHashers * 1000))));
-		System.exit(0);
-
-		SecureRandom random = new SecureRandom();
-		Random insRandom = new Random(random.nextLong());
-
-		byte[] sale = new byte[16];
-
-		long saltS = System.nanoTime();
-
-		for (int i = 0; i < this.maxHashers; i++) {
-			random.nextBytes(sale);
-		}
-
-		long saltE = System.nanoTime();
-
-		System.out.println(String.format("Secure %dns ea.", ((saltE - saltS) / this.maxHashers)));
-
-		saltS = System.nanoTime();
-
-		for (int i = 0; i < this.maxHashers; i++) {
-			insRandom.nextBytes(sale);
-		}
-
-		saltE = System.nanoTime();
-
-		System.out.println(String.format("Insecure %dns ea.", ((saltE - saltS) / this.maxHashers)));
-
-		Encoder encoder = Base64.getEncoder();
-		String rawHashBase;
-		byte[] nonce = new byte[32];
-		String rawNonce;
-
-		String encNonce = null;
-		StringBuilder hashBase;
-		random.nextBytes(nonce);
-		encNonce = encoder.encodeToString(nonce);
-
-		char[] nonceChar = encNonce.toCharArray();
-
-		// shaves a bit off vs regex -- for this operation, about 50% savings
-		StringBuilder nonceSb = new StringBuilder(encNonce.length());
-		for (char ar : nonceChar) {
-			if (ar >= '0' && ar <= '9' || ar >= 'a' && ar <= 'z' || ar >= 'A' && ar <= 'Z') {
-				nonceSb.append(ar);
-			}
-		}
-
-		BigInteger difficulty = BigInteger.valueOf(263701626l);
-		String difficultyString = difficulty.toString();
-		String data = "thisistestdatandnotreallyrepresentativebutletsuseit.";
-		// prealloc probably saves us 10% on this op sequence
-		hashBase = new StringBuilder(500); // size of key + nonce + difficult + argon + data + spacers
-		hashBase.append(refKey).append("-");
-		hashBase.append(nonceSb).append("-");
-		hashBase.append(data).append("-");
-		hashBase.append(difficultyString);
-
-		rawNonce = nonceSb.toString();
-		rawHashBase = hashBase.toString();
-
-		System.out.println("rawNonce: " + rawNonce + " \nrawHashBase: " + rawHashBase);
-
-		String argon = null;
-		argon2 = Argon2Factory.create(Argon2Types.ARGON2i);
-
-		byte[] byteBase = null;
-		long[][] findBuckets = new long[8][256];
-		System.out.println();
-		for (int j = 0; j < this.maxHashers; j++) {
-			hashBase = new StringBuilder(500);
-			argon = argon2.hash(4, 16384, 4, rawHashBase);
-			hashBase.append(rawHashBase).append(argon);
-
-			byteBase = hashBase.toString().getBytes();
-			for (int i = 0; i < 5; i++) {
-				byteBase = sha512.digest(byteBase);
-			}
-			byteBase = sha512.digest(byteBase);
-
-			findBuckets[0][byteBase[10] & 0xFF]++;
-			findBuckets[1][byteBase[15] & 0xFF]++;
-			findBuckets[2][byteBase[20] & 0xFF]++;
-			findBuckets[3][byteBase[23] & 0xFF]++;
-			findBuckets[4][byteBase[31] & 0xFF]++;
-			findBuckets[5][byteBase[40] & 0xFF]++;
-			findBuckets[6][byteBase[45] & 0xFF]++;
-			findBuckets[7][byteBase[55] & 0xFF]++;
-
-			System.out.println("\033[1A\033[2K" + j);
-		}
-
-		int uniformTarget = this.maxHashers / 256;
-
-		for (int k = 0; k < 8; k++) {
-			StringBuilder sb = new StringBuilder(256);
-			long sum = 0;
-			long[] interior = new long[uniformTarget * 3 + 1];
-			for (int q = 0; q < 256; q++) {
-				if (findBuckets[k][q] > uniformTarget * 3) {
-					interior[uniformTarget * 3]++;
-				} else {
-					interior[(int) findBuckets[k][q]]++;
-				}
-			}
-			sb.append(" [");
-			for (int p = 0; p < uniformTarget * 3 + 1; p++) {
-				sb.append("[").append(interior[p]);
-			}
-			System.out.println(k + "] " + sb.toString());
-		}
-
-		System.out.println();
-
-		findBuckets = new long[8][256];
-		for (int j = 0; j < this.maxHashers; j++) {
-			random.nextBytes(nonce);
-			encNonce = encoder.encodeToString(nonce);
-
-			nonceChar = encNonce.toCharArray();
-
-			// shaves a bit off vs regex -- for this operation, about 50% savings
-			nonceSb = new StringBuilder(encNonce.length());
-			for (char ar : nonceChar) {
-				if (ar >= '0' && ar <= '9' || ar >= 'a' && ar <= 'z' || ar >= 'A' && ar <= 'Z') {
-					nonceSb.append(ar);
-				}
-			}
-
-			// prealloc probably saves us 10% on this op sequence
-			hashBase = new StringBuilder(500); // size of key + nonce + difficult + argon + data + spacers
-			hashBase.append(refKey).append("-");
-			hashBase.append(nonceSb).append("-");
-			hashBase.append(data).append("-");
-			hashBase.append(difficultyString);
-
-			rawNonce = nonceSb.toString();
-			rawHashBase = hashBase.toString();
-
-			hashBase = new StringBuilder(500);
-			argon = argon2.hash(4, 16384, 4, rawHashBase);
-			hashBase.append(rawHashBase).append(argon);
-
-			byteBase = hashBase.toString().getBytes();
-			for (int i = 0; i < 5; i++) {
-				byteBase = sha512.digest(byteBase);
-			}
-			byteBase = sha512.digest(byteBase);
-
-			findBuckets[0][byteBase[10] & 0xFF]++;
-			findBuckets[1][byteBase[15] & 0xFF]++;
-			findBuckets[2][byteBase[20] & 0xFF]++;
-			findBuckets[3][byteBase[23] & 0xFF]++;
-			findBuckets[4][byteBase[31] & 0xFF]++;
-			findBuckets[5][byteBase[40] & 0xFF]++;
-			findBuckets[6][byteBase[45] & 0xFF]++;
-			findBuckets[7][byteBase[55] & 0xFF]++;
-
-			System.out.println("\033[1A\033[2K" + j);
-		}
-
-		for (int k = 0; k < 8; k++) {
-			StringBuilder sb = new StringBuilder(256);
-			long[] interior = new long[uniformTarget * 3 + 1];
-			for (int q = 0; q < 256; q++) {
-				if (findBuckets[k][q] > uniformTarget * 3) {
-					interior[uniformTarget * 3]++;
-				} else {
-					interior[(int) findBuckets[k][q]]++;
-				}
-			}
-			sb.append(" [");
-			for (int p = 0; p < uniformTarget * 3 + 1; p++) {
-				sb.append("[").append(interior[p]);
-			}
-			System.out.println(k + "] " + sb.toString());
-		}
-
+		// No tests at present.
+		
 		System.out.println("Done static testing.");
 	}
 
 	@Override
 	public void uncaughtException(Thread t, Throwable e) {
-		System.err.println("Detected thread " + t.getName() + " death due to error: " + e.getMessage());
+		coPrint.a(Attribute.BOLD).f(FColor.RED)
+			.p("Detected thread ").f(FColor.WHITE).p(t.getName())
+			.f(FColor.RED).p(" death due to error: ").a(Attribute.LIGHT).ln(e.getMessage()).clr();
 		e.printStackTrace();
 
 		System.err.println("\n\nThis is probably fatal, so exiting now.");

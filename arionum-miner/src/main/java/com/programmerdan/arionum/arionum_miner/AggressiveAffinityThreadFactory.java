@@ -38,7 +38,7 @@ public class AggressiveAffinityThreadFactory implements ThreadFactory {
     private int id = 1;
 
     public AggressiveAffinityThreadFactory(String name) {
-        this(name, false);
+        this(name, true);
     }
 
     public AggressiveAffinityThreadFactory(String name, boolean daemon) {
@@ -56,8 +56,8 @@ public class AggressiveAffinityThreadFactory implements ThreadFactory {
 			@Override
             public void run() {
                 try {
-                	if (myid < AffinityLock.cpuLayout().cpus()) {
-	                	AffinityLock lock = AffinityLock.acquireLock(myid);
+                	if (myid < AffinityLock.cpuLayout().cpus()-1) {
+	                	AffinityLock lock = AffinityLock.acquireLock(false); //myid);
 	                	if (!lock.isAllocated()) {
 	                		lock = AffinityLock.acquireLock();
 	                	}
