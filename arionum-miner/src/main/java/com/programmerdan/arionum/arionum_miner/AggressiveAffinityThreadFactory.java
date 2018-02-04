@@ -51,7 +51,7 @@ public class AggressiveAffinityThreadFactory implements ThreadFactory {
     	final int myid = id;
         String name2 = myid <= 1 ? name : (name + '-' + myid);
         id++;
-        System.err.println("Creating a new thread: " + name2);
+        //System.err.println("Creating a new thread: " + name2);
         Thread t = new Thread(new Runnable() {
 			@Override
             public void run() {
@@ -65,14 +65,14 @@ public class AggressiveAffinityThreadFactory implements ThreadFactory {
 	                		lock = AffinityLock.acquireCore();
 	                	}
 	                	if (!lock.isAllocated()) {
-	                		System.err.println("Thread " + name2 + " could not reserve a core, try with fewer hashers.");
+	                		System.err.println("Thread " + name2 + " could not reserve a core, it may experience decayed performance.");
 	                	}
 	                	
 	                    r.run();
 	                    
 	                    lock.close();
                 	} else {
-                		System.err.println("Thread " + name2 + " tried to reserve a core out of range, try with fewer hashers.");
+                		//System.err.println("Thread " + name2 + " tried to reserve a core out of range, try with fewer hashers.");
                 		
                 		r.run();
                 	}

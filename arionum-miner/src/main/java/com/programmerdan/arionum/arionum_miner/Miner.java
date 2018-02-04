@@ -88,6 +88,8 @@ import com.diogonunes.jcdp.color.api.Ansi.BColor.*;
 public class Miner implements UncaughtExceptionHandler {
 
 	public static final long UPDATING_DELAY = 2000l;
+	public static final long UPDATING_REPORT = 45000l;
+	public static final long UPDATING_STATS = 7500l;
 	
 	private CPrint coPrint;
 	
@@ -119,7 +121,7 @@ public class Miner implements UncaughtExceptionHandler {
 	/**
 	 * The session length is the target parameter generally tuned against
 	 */
-	private long sessionLength = 7500l;
+	private long sessionLength = 5000l;
 
 	private static final long MIN_SESSION_LENGTH = 5000l;
 	private static final long MAX_SESSION_LENGTH = 14000l;
@@ -642,7 +644,7 @@ public class Miner implements UncaughtExceptionHandler {
 
 						if (status != HttpURLConnection.HTTP_OK) {
 							coPrint.updateLabel().p("Update failure: ")
-								.a(Attribute.UNDERLINE).f(FColor.RED).b(BColor.NONE).ln(con.getResponseMessage());
+								.a(Attribute.UNDERLINE).f(FColor.RED).b(BColor.NONE).ln(con.getResponseMessage()).clr();
 							con.disconnect();
 							failures++;
 							updateTime(System.currentTimeMillis() - executionTimeTracker);
@@ -667,7 +669,7 @@ public class Miner implements UncaughtExceptionHandler {
 						JSONObject jsonData = (JSONObject) obj.get("data");
 						String localData = (String) jsonData.get("block");
 						if (!localData.equals(data)) {
-							coPrint.updateLabel().p("Update transitioned to new block. ");
+							coPrint.updateLabel().p("Update transitioned to new block. ").clr();
 							if (lastBlockUpdate > 0) {
 								coPrint.updateMsg().p("  Last block took: ")
 									.normData().p( ((System.currentTimeMillis() - lastBlockUpdate) / 1000)).unitLabel().p("s ").clr();
@@ -703,7 +705,7 @@ public class Miner implements UncaughtExceptionHandler {
 							updateWorkers();
 						}
 						long sinceLastReport = System.currentTimeMillis() - lastReport;
-						if (sinceLastReport > 15000l) {
+						if (sinceLastReport > UPDATING_REPORT) {
 							lastReport = System.currentTimeMillis();
 							coPrint.ln().info().p("Node: ").textData().fs(node).p(" ")
 								.info().p("MinDL: ").dlData().fd(limit).p("  ")
@@ -729,6 +731,7 @@ public class Miner implements UncaughtExceptionHandler {
 										.unitLabel().p("H/s")
 									.info().p("  Reported Speed: ").normData().fs(cummSpeed)
 										.unitLabel().p("H/s").clr();
+							printWorkerHeader();
 							
 							updateTimeAvg.set(0);
 							updateTimeMax.set(Long.MIN_VALUE);
@@ -751,7 +754,7 @@ public class Miner implements UncaughtExceptionHandler {
 						if (endline) {
 							System.out.println();
 						}
-						if (sinceLastReport > 15000l && sinceLastReport < 5000000000l) {
+						if ((sinceLastReport % UPDATING_STATS) < UPDATING_DELAY && sinceLastReport < 5000000000l) {
 							printWorkerStats();
 						}
 
@@ -1012,21 +1015,21 @@ public class Miner implements UncaughtExceptionHandler {
 		}
 	}
 
-	private void printWorkerStats(boolean headers) {
-		if (headers) {
-			coPrint.p(" ").headers().fp("%7s", "Streams").clr()
-				.p(" ").headers().fp("%5s", "Runs").clr()
-				.p(" ").headers().fp("%5s", "H/run").clr()
-				.p(" ").headers().fp("%7s", "Cur H/s").clr()
-				.p(" ").headers().fp("%8s", "Cur TiC%").clr()
-				.p(" ").headers().fp("%8s", "Cur WL%").clr()
-				.p(" ").headers().fp("%8s", "Argon %").clr()
-				.p(" ").headers().fp("%8s", "Sha %").clr()
-				.p(" ").headers().fp("%7s", "Shares").clr()
-				.p(" ").headers().fp("%5s", "Finds").clr()
-				.p(" ").headers().fp("%6s", "Reject").clr().ln();
-		}
+	private void printWorkerHeader() {
+		coPrint.ln("").headers().fp(" %7s", "Streams").clr()
+			.p(" ").headers().fp("%5s", "Runs").clr()
+			.p(" ").headers().fp("%5s", "H/run").clr()
+			.p(" ").headers().fp("%7s", "Cur H/s").clr()
+			.p(" ").headers().fp("%8s", "Cur TiC%").clr()
+			.p(" ").headers().fp("%8s", "Cur WL%").clr()
+			.p(" ").headers().fp("%8s", "Argon %").clr()
+			.p(" ").headers().fp("%8s", "Sha %").clr()
+			.p(" ").headers().fp("%7s", "Shares").clr()
+			.p(" ").headers().fp("%5s", "Finds").clr()
+			.p(" ").headers().fp("%6s", "Reject").clr();
+	}
 		
+	private void printWorkerStats() {
 		/*System.out.println(String.format(" %7s %5s %5s %7s %7s %8s %8s %8s %7s %5s %6s", "Streams", "Runs", "H/run", "Cur H/s",
 				"Cur TiC%", "Cur WL%", "Argon %", "Sha %", "Shares", "Finds", "Reject"));*/
 		int recentSize = 0;
@@ -1068,7 +1071,7 @@ public class Miner implements UncaughtExceptionHandler {
 				.p(" ").normData().fp("%8.3f", shaEff / (double) runs).clr()
 				.p(" ").dlData().fp("%7d", shares).clr()
 				.p(" ").dlData().fp("%5d", finds).clr()
-				.p(" ").dlData().fp("%6d", failures).clr().ln();
+				.p(" ").dlData().fp("%6d", failures).clr().ln().clr();
 
 			/*System.out.println(String.format(" %7d %5d %5d %7.2f %7.2f %8.3f %8.3f %8.3f %7d %5d %6d", this.hasherCount.get(),
 					runs, this.hashesPerSession, avgRate / (double) ((double) runs / (double) this.hasherCount.get()),
