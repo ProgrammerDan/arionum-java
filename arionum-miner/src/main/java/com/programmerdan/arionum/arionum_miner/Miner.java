@@ -66,12 +66,7 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
-import de.mkammerer.argon2.Argon2;
-import de.mkammerer.argon2.Argon2Factory;
-import de.mkammerer.argon2.Argon2Factory.Argon2Types;
-import de.mkammerer.argon2.jna.Argon2Library;
-import de.mkammerer.argon2.jna.JnaUint32;
-import de.mkammerer.argon2.jna.Size_t;
+import com.programmerdan.arionum.arionum_miner.jna.*;
 
 import com.diogonunes.jcdp.color.api.Ansi.Attribute;
 import com.diogonunes.jcdp.color.api.Ansi.FColor;
@@ -763,6 +758,7 @@ public class Miner implements UncaughtExceptionHandler {
 						lastUpdate = System.currentTimeMillis();
 						if (!(e instanceof SocketTimeoutException)) {
 							coPrint.updateLabel().p("Non-fatal Update failure: ").textData().p(e.getMessage()).updateMsg().ln(" We will try again in a moment.").clr();
+							//e.printStackTrace();
 						}
 						failures++;
 						updateTime(System.currentTimeMillis() - executionTimeTracker);

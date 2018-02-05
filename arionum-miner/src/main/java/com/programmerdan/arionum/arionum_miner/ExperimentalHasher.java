@@ -34,10 +34,7 @@ import java.util.Base64;
 import java.util.Base64.Encoder;
 import java.util.Random;
 
-import de.mkammerer.argon2.Argon2Factory.Argon2Types;
-import de.mkammerer.argon2.jna.Argon2Library;
-import de.mkammerer.argon2.jna.JnaUint32;
-import de.mkammerer.argon2.jna.Size_t;
+import com.programmerdan.arionum.arionum_miner.jna.*;
 
 /**
  * The intent for this hasher is deeper self-inspection of running times of various components. It can be used as a testbed for comparative performance. It is not meant to be used for general use
@@ -67,6 +64,7 @@ public class ExperimentalHasher extends Hasher {
 	private final Size_t encLen;
 	private final byte[] encoded;
 	private final Argon2Library argonlib;
+	private final Argon2_type argonType = new Argon2_type(1l);
 
 	public ExperimentalHasher(Miner parent, String id, long target, long maxTime) {
 		super(parent, id, target, maxTime);
@@ -74,7 +72,7 @@ public class ExperimentalHasher extends Hasher {
 		// SET UP ARGON FOR DIRECT-TO-JNA-WRAPPER-EXEC
 		argonlib = Argon2Library.INSTANCE;
 		encLen = argonlib.argon2_encodedlen(iterations, memory, parallelism, saltLenI, hashLenI,
-				Argon2Types.ARGON2i.getJnaType());
+				argonType);
 		encoded = new byte[encLen.intValue()];
 	}
 

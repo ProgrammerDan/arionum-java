@@ -33,9 +33,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Base64.Encoder;
 
-import de.mkammerer.argon2.Argon2;
-import de.mkammerer.argon2.Argon2Factory;
-import de.mkammerer.argon2.Argon2Factory.Argon2Types;
+import com.programmerdan.arionum.arionum_miner.jna.*;
 
 /**
  * Proof of concept GPU miner. Once I figure out how.
@@ -102,7 +100,7 @@ public class GPUHasher extends Hasher {
 		byte[] byteBase = null;
 		
 		String argon = null;
-		Argon2 argon2 = Argon2Factory.create(Argon2Types.ARGON2i);
+		//Argon2 argon2 = Argon2Factory.create(Argon2Types.ARGON2i);
 
 		MessageDigest sha512 = null;
 		try {
@@ -132,7 +130,7 @@ public class GPUHasher extends Hasher {
 			try {
 				hashBase = new StringBuilder(this.hashBufferSize);
 				statArgonBegin = System.nanoTime();
-				argon = argon2.hash(4, 16384, 4, rawHashBase);
+				//argon = argon2.hash(4, 16384, 4, rawHashBase);
 				statArgonEnd = System.nanoTime();
 				hashBase.append(rawHashBase).append(argon);
 
