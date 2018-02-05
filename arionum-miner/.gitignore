@@ -1,8 +1,8 @@
 /target/
 *.exe
 *.jar
-*.sh
-*.bat
+/*.sh
+/*.bat
 *.cfg
 **/dependency-reduced-pom.xml
 dependency-reduced-pom.xml

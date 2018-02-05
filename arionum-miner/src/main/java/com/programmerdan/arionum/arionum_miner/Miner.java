@@ -267,7 +267,7 @@ public class Miner implements UncaughtExceptionHandler {
 							String paddress = console.nextLine();
 							lines.add(paddress);
 
-							System.out.println(
+							/*System.out.println(
 									" Would you like autotuning to occur? This will try to maximize your H/s ");
 							System.out.println(
 									"   over the course of many minutes by adjusting hashers and parameters. (y/N)");
@@ -275,8 +275,8 @@ public class Miner implements UncaughtExceptionHandler {
 							if ("y".equalsIgnoreCase(console.nextLine())) {
 								lines.add("-1");
 								lines.add("auto");
-							} else {
-								int defaultHashers = (int) Math.ceil(Runtime.getRuntime().availableProcessors() / 4d);
+							} else {*/
+								int defaultHashers = Runtime.getRuntime().availableProcessors();
 								System.out.print(" Simultaneous hashers to run? (you have "
 										+ Runtime.getRuntime().availableProcessors()
 										+ " cores, leave blank for default of " + defaultHashers + ") ");
@@ -291,7 +291,7 @@ public class Miner implements UncaughtExceptionHandler {
 								 * System.out.print(" Core type? (standard) "); String core = console.nextLine(); if (core == null || core.trim().isEmpty()) { lines.add("stable"); } else { lines.add(core); }
 								 */
 								lines.add("standard");
-							}
+							//}
 
 							System.out.print(" Activate colors? (y/N) ");
 
@@ -315,7 +315,7 @@ public class Miner implements UncaughtExceptionHandler {
 							String address = console.nextLine();
 							lines.add(address);
 
-							System.out.println(
+							/*System.out.println(
 									" Would you like autotuning to occur? This will try to maximize your H/s ");
 							System.out.println(
 									"   over the course of many minutes by adjusting hashers and parameters. (y/N)");
@@ -323,8 +323,8 @@ public class Miner implements UncaughtExceptionHandler {
 							if ("y".equalsIgnoreCase(console.nextLine())) {
 								lines.add("-1");
 								lines.add("auto");
-							} else {
-								int defaultHashers = (int) Math.ceil(Runtime.getRuntime().availableProcessors() / 4d);
+							} else {*/
+								int defaultHashers = Runtime.getRuntime().availableProcessors();
 								System.out.print(" Simultaneous hashers to run? (you have "
 										+ Runtime.getRuntime().availableProcessors()
 										+ " cores, leave blank for default of " + defaultHashers + ") ");
@@ -340,7 +340,7 @@ public class Miner implements UncaughtExceptionHandler {
 								 * lines.add(core); }
 								 */
 								lines.add("standard");
-							}
+							//}
 							System.out.print(" Activate colors? (y/N) ");
 
 							if ("y".equalsIgnoreCase(console.nextLine())) {
@@ -393,7 +393,7 @@ public class Miner implements UncaughtExceptionHandler {
 							php = console.nextLine();
 							lines.add(php);
 
-							int defaultHashers = (int) Math.ceil(Runtime.getRuntime().availableProcessors() / 4d);
+							int defaultHashers = Runtime.getRuntime().availableProcessors() ;
 							System.out.print(" Max simultaneous hashers to benchmark? (you have "
 									+ Runtime.getRuntime().availableProcessors() + " cores, leave blank for default of "
 									+ defaultHashers + ") ");
@@ -541,13 +541,13 @@ public class Miner implements UncaughtExceptionHandler {
 			System.err.println("Usage: ");
 			System.err.println("  java -jar arionum-miner-java.jar");
 			System.err.println(
-					"  java -jar arionum-miner-java.jar pool http://aropool.com address [#hashers] [basic|debug|experimental] [true|false]");
+					"  java -jar arionum-miner-java.jar pool http://aropool.com address [#hashers] [standard] [true|false]");
 			System.err.println(
-					"  java -jar arionum-miner-java.jar solo node-address pubKey priKey [#hashers] [basic|debug|experimental] [true|false]");
+					"  java -jar arionum-miner-java.jar solo node-address pubKey priKey [#hashers] [standard] [true|false]");
 			System.err.println(" where:");
 			System.err.println("   [#hashers] is # of hashers to spin up. Default 1.");
 			System.err.println(
-					"   [stable|basic|debug|experimental|auto] is type of hasher to run -- stable is always stable, basic is php ref, debug is chatty, experimental has no guarantees but is usually faster. Auto lets java miner pick best config. Default stable.");
+					"   [standard] is type of hasher to run. At present, only standard. More options will come.");
 			System.err.println(
 					"   [true|false] is if colored output is enabled.");
 
@@ -559,7 +559,7 @@ public class Miner implements UncaughtExceptionHandler {
 				.a(Attribute.DARK).p(this.maxHashers).a(Attribute.NONE).ln(" hashers. ").clr();
 
 		this.hashers = Executors.newFixedThreadPool(
-				this.maxHashers > 0 ? this.maxHashers : Runtime.getRuntime().availableProcessors() - 1,
+				this.maxHashers > 0 ? this.maxHashers : Runtime.getRuntime().availableProcessors(),
 				new AggressiveAffinityThreadFactory("HashMasher", true));
 
 		this.limit = 240; // default
@@ -1204,6 +1204,11 @@ public class Miner implements UncaughtExceptionHandler {
 						coPrint.textData().f(FColor.RED).ln("After more then five failed attempts to submit this nonce, we are giving up.").clr();
 						/*System.err.println(
 								"After more then five failed attempts to submit this nonce, we are giving up.");*/
+					} else if (failures > 0) {
+						try {
+							Thread.sleep(50l);
+						} catch (InterruptedException ioe) {
+						}
 					}
 				}
 
