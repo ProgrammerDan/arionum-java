@@ -71,7 +71,7 @@ public class ExperimentalHasher extends Hasher {
 	private final Size_t saltLen = new Size_t(16l);
 	private final Size_t hashLen = new Size_t(32l);
 	private final Size_t encLen;
-	private final byte[] encoded;
+	private byte[] encoded;
 	private final Argon2Library argonlib;
 	private final Argon2_type argonType = new Argon2_type(1l);
 
@@ -97,10 +97,31 @@ public class ExperimentalHasher extends Hasher {
 	private byte[] fullHashBaseBuffer;
 
 	@Override
-	public void update(BigInteger difficulty, String data, long limit, String publicKey) {
-		super.update(difficulty, data, limit, publicKey);
+	public void update(BigInteger difficulty, String data, long limit, String publicKey, long blockHeight) {
+		super.update(difficulty, data, limit, publicKey, blockHeight);
 
 		genNonce();
+	}
+	
+	@Override
+	public void newHeight(long oldBlockHeight, long newBlockHeight) {
+		if (oldBlockHeight < 10800 && newBlockHeight >= 10800) {
+			iterations.setValue(1);
+			parallelism.setValue(1);
+			memory.setValue(524288l);
+			encLen.setValue(argonlib.argon2_encodedlen(iterations, memory, parallelism, saltLenI, hashLenI,
+					argonType).longValue());
+			encoded = new byte[encLen.intValue()];
+		} else if (newBlockHeight >= 10800) { // sanity doublecheck.
+			if (memory.longValue() != 524288l) {
+				iterations.setValue(1);
+				parallelism.setValue(1);
+				memory.setValue(524288);
+				encLen.setValue(argonlib.argon2_encodedlen(iterations, memory, parallelism, saltLenI, hashLenI,
+						argonType).longValue());
+				encoded = new byte[encLen.intValue()];
+			}
+		}
 	}
 
 	private void genNonce() {

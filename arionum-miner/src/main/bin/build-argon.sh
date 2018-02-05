@@ -10,7 +10,7 @@ cd arionum-argon
 
 git pull
 
-git checkout arionum-argon2i
+git checkout argon2i-slim
 
 make clean && CFLAGS="-m64" OPTTARGET=native NO_THREADS=1 make
 

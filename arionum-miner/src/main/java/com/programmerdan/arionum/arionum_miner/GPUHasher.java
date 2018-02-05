@@ -55,11 +55,14 @@ public class GPUHasher extends Hasher {
 	private String rawNonce;
 	
 	@Override
-	public void update(BigInteger difficulty, String data, long limit, String publicKey) {
-		super.update(difficulty, data, limit, publicKey);
+	public void update(BigInteger difficulty, String data, long limit, String publicKey, long blockHeight) {
+		super.update(difficulty, data, limit, publicKey, blockHeight);
 		
 		genNonce();
 	}
+	
+	@Override
+	public void newHeight(long oldH, long newH) {}
 	
 	/**
 	 */
@@ -130,7 +133,7 @@ public class GPUHasher extends Hasher {
 			try {
 				hashBase = new StringBuilder(this.hashBufferSize);
 				statArgonBegin = System.nanoTime();
-				//argon = argon2.hash(4, 16384, 4, rawHashBase);
+				// this is all TODO: argon = argon2.hash(4, 16384, 4, rawHashBase);
 				statArgonEnd = System.nanoTime();
 				hashBase.append(rawHashBase).append(argon);
 

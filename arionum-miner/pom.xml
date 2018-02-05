@@ -168,6 +168,14 @@
 										<filter token="batchJarName" value="${project.build.finalName}" />
 									</filterset>
 								</copy>
+								<copy todir="./" overwrite="true">
+									<fileset dir="src/main/bin/">
+										<filename name="*.ps1" />
+									</fileset>
+									<filterset>
+										<filter token="batchJarName" value="${project.build.finalName}" />
+									</filterset>
+								</copy>
 							</tasks>
 						</configuration>
 					</execution>
@@ -231,5 +239,5 @@
 			<version>1.7.25</version>
 		</dependency>
 	</dependencies>
-	<description>A full featured java implementation of the arionum miner. Portions derived from the php reference miner.</description>
+	<description>A full featured Java implementation of the Arionum miner. Portions derived from the php reference miner.</description>
 </project>

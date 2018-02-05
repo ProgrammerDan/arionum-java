@@ -75,9 +75,10 @@ import com.diogonunes.jcdp.color.api.Ansi.BColor;
 import com.diogonunes.jcdp.color.api.Ansi.FColor.*;
 import com.diogonunes.jcdp.color.api.Ansi.BColor.*;
 
-
 /**
  * Miner wrapper.
+ * 
+ * Implements hard fork 10800 -- Resistance
  */
 @SuppressWarnings({ "unused" })
 public class Miner implements UncaughtExceptionHandler {
@@ -175,7 +176,7 @@ public class Miner implements UncaughtExceptionHandler {
 	private String data;
 	private BigInteger difficulty;
 	private long limit;
-
+	private long height;
 	private long lastBlockUpdate;
 
 	/* Update related */
@@ -695,6 +696,14 @@ public class Miner implements UncaughtExceptionHandler {
 						if (limit != localLimit) {
 							limit = localLimit;
 						}
+						
+						long localHeight = (Long) jsonData.get("height");
+						if (localHeight != height) {
+							coPrint.updateMsg().p("New Block Height: ")
+								.normData().p(localHeight).unitLabel().p(". ").clr();
+							height = localHeight;
+							endline = true;
+						}
 
 						if (endline) {
 							updateWorkers();
@@ -704,7 +713,8 @@ public class Miner implements UncaughtExceptionHandler {
 							lastReport = System.currentTimeMillis();
 							coPrint.ln().info().p("Node: ").textData().fs(node).p(" ")
 								.info().p("MinDL: ").dlData().fd(limit).p("  ")
-								.info().p("BestDL: ").dlData().fd(bestDL.get()).ln()
+								.info().p("BestDL: ").dlData().fd(bestDL.get()).p("  ")
+								.info().p("Block Height: ").normData().fd(height).ln()
 								.p("      ").info().p("Time on Block: ").normData().fd(((System.currentTimeMillis() - lastBlockUpdate) / 1000)).unitLabel().p("s  ")
 								.info().p("Inverse Difficulty: ").dlData().fd(difficulty.longValue()).clr();
 							coPrint.ln().info().p("  Updates:   Last ").normData().fd((sinceLastReport / 1000))
@@ -870,7 +880,7 @@ public class Miner implements UncaughtExceptionHandler {
 	 *            the worker to update
 	 */
 	protected void updateWorker(Hasher hasher) {
-		hasher.update(getDifficulty(), getBlockData(), getLimit(), getPublicKey());
+		hasher.update(getDifficulty(), getBlockData(), getLimit(), getPublicKey(), getHeight());
 	}
 
 	/**
@@ -1322,6 +1332,10 @@ public class Miner implements UncaughtExceptionHandler {
 
 	protected String getPublicKey() {
 		return this.publicKey;
+	}
+	
+	protected long getHeight() {
+		return this.height;
 	}
 
 	private void startTest() {

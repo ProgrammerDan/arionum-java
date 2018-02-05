@@ -68,6 +68,7 @@ public abstract class Hasher implements Runnable{
 	protected long hashEnd;
 	protected long hashTime;
 	protected long maxTime; 
+	protected long blockHeight;
 	
 	// local copy of data, updated "off thread"
 	protected BigInteger difficulty;
@@ -151,7 +152,7 @@ public abstract class Hasher implements Runnable{
 		return this.hashTime;
 	}
 	
-	public void update(BigInteger difficulty, String data, long limit, String publicKey) {
+	public void update(BigInteger difficulty, String data, long limit, String publicKey, long blockHeight) {
 		this.difficulty = difficulty;
 		this.difficultyString = difficulty.toString();
 		if (!data.equals(this.data)) {
@@ -161,7 +162,21 @@ public abstract class Hasher implements Runnable{
 		this.hashBufferSize = 280 + this.data.length();
 		this.limit = limit;
 		this.publicKey = publicKey;
+		if (blockHeight != this.blockHeight) {
+			newHeight(this.blockHeight, blockHeight);
+		}
+		this.blockHeight = blockHeight;
 	}
+	
+	/**
+	 * Called to let hashers handle new block heights in a flexible fashion. This will allow
+	 * us to accommodate hard forks easily.
+	 * 
+	 * @param oldBlockHeight
+	 * @param newBlockHeight
+	 * 
+	 */
+	public abstract void newHeight(long oldBlockHeight, long newBlockHeight);
 
 	public long getHashes() {
 		return this.hashCount;
