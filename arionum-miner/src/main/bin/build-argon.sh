@@ -10,6 +10,8 @@ cd arionum-argon
 
 git pull
 
+echo "We will use argon2i-slim, as it is the most stable trimmed release of argon2i available."
+
 git checkout argon2i-slim
 
 make clean && CFLAGS="-m64" OPTTARGET=native NO_THREADS=1 make
