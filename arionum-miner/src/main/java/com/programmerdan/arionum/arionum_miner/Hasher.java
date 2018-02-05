@@ -98,6 +98,22 @@ public abstract class Hasher implements Runnable{
 		this.maxTime = maxTime;
 	}
 
+	public void completeSession() {
+		// emulate shutdown / restart, but on dedi thread so don't.
+		HasherStats stats = new HasherStats(id, argonTime, shaTime, nonArgonTime, hashTime, hashCount, bestDL, shares, finds);
+		argonTime = 0l;
+		shaTime = 0l;
+		nonArgonTime = 0l;
+		hashTime = 0l;
+		hashCount = 0l;
+		bestDL = Long.MAX_VALUE;
+		shares = 0l;
+		finds = 0l;
+		long[] sessionUpd = parent.sessionFinish(stats, this);
+		this.targetHashCount = sessionUpd[0];
+		this.maxTime = sessionUpd[1];
+	}
+
 	public String getID() {
 		return this.id;
 	}

@@ -112,7 +112,7 @@ public class Miner implements UncaughtExceptionHandler {
 	 * Idea here is some soft profiling; hashesPerSession records how many hashes a particular worker accomplishes in a session, which starts at some initial value; then we tune it based on observed results.
 	 */
 	private long hashesPerSession = 10l;
-	private static final long MIN_HASHES_PER_SESSION = 5l;
+	private static final long MIN_HASHES_PER_SESSION = 1l;
 	/**
 	 * The session length is the target parameter generally tuned against
 	 */
@@ -904,6 +904,23 @@ public class Miner implements UncaughtExceptionHandler {
 		addWorker(workerId, hasher);
 	}
 
+
+	/**
+	 * When a worker's session is done, tosses its stats on the pile and updates the worker with updated runlength goals.
+	 * 
+	 * @param stats outgoing session stats
+	 * @param worker outgoing worker
+	 */
+	protected long[] sessionFinish(HasherStats stats, Hasher worker) {
+		this.deadWorkerSociety.offer(stats);
+		try {
+			stats.scheduledTime = System.currentTimeMillis() - this.deadWorkerLives.put(stats.id, System.currentTimeMillis());
+		} catch (NullPointerException npe) {
+			coPrint.a(Attribute.BOLD).f(FColor.RED).ln("Failed to determine full scheduled time for a worker").clr();
+			stats.scheduledTime = stats.hashTime;
+		}
+		return new long[]{this.hashesPerSession, (long) this.sessionLength * 2l};
+	}
 	/**
 	 * Periodically we tally up reports from finished worker tasks
 	 */
@@ -1056,6 +1073,8 @@ public class Miner implements UncaughtExceptionHandler {
 				shaEff += report.shaEff * 100d;
 				deadWorkerSummaries.push(report);
 			}
+
+			if (waitEff < 0.0d) waitEff = 0.0d; // -% is meaningless...
 
 			coPrint.p(" ").normData().fp("%7d", this.hasherCount.get()).clr()
 				.p(" ").normData().fp("%5d", runs).clr()

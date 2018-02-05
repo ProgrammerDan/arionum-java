@@ -66,12 +66,6 @@
 					</artifactSet>
 					<filters>
 						<filter>
-							<artifact>de.mkammerer:*</artifact>
-							<includes>
-								<include>**</include>
-							</includes>
-						</filter>
-						<filter>
 							<artifact>com.googlecode.json-simple:*</artifact>
 							<includes>
 								<include>**</include>

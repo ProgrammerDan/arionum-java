@@ -56,30 +56,32 @@ public class AggressiveAffinityThreadFactory implements ThreadFactory {
 			@Override
             public void run() {
                 try {
-                	if (myid < AffinityLock.cpuLayout().cpus()-1) {
-	                	AffinityLock lock = AffinityLock.acquireLock(false); //myid);
-	                	if (!lock.isAllocated()) {
-	                		lock = AffinityLock.acquireLock();
-	                	}
-	                	if (!lock.isAllocated()) {
+                	if (myid < AffinityLock.cpuLayout().cpus()) {
+	                	AffinityLock lock = AffinityLock.acquireLock();//false); //myid);
+	                	if (!lock.isBound()) {
 	                		lock = AffinityLock.acquireCore();
 	                	}
-	                	if (!lock.isAllocated()) {
-	                		System.err.println("Thread " + name2 + " could not reserve a core, it may experience decayed performance.");
+	                	if (!lock.isBound()) {
+	                		lock = AffinityLock.acquireLock(myid);
 	                	}
+	                	if (!lock.isBound()) {
+	                		System.err.println("Thread " + name2 + " could not immediately reserve a core, it may experience decayed performance.");
+					
+	                	}
+				//System.out.println("Thread " + name2 + " affinity: " + lock.toString() + " bound " + lock.isBound() + " allocated " + lock.isAllocated());
 	                	
 	                    r.run();
 	                    
 	                    lock.close();
                 	} else {
-                		//System.err.println("Thread " + name2 + " tried to reserve a core out of range, try with fewer hashers.");
+                		System.err.println("Thread " + name2 + " could not immediately reserve a core, as there are no more cores to assign to. If performance is degraded, attempt with fewer hashers.");
                 		
                 		r.run();
                 	}
                 }catch (Throwable e) {
                 	System.err.println("Thread " + name2 + " died with error:");
                 	e.printStackTrace();
-				}
+		}
             }
         }, name2);
         t.setDaemon(daemon);

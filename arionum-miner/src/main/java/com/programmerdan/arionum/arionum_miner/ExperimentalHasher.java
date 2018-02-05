@@ -33,6 +33,10 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Base64.Encoder;
 import java.util.Random;
+import java.util.BitSet;
+
+import net.openhft.affinity.Affinity;
+import net.openhft.affinity.AffinityLock;
 
 import com.programmerdan.arionum.arionum_miner.jna.*;
 
@@ -57,6 +61,11 @@ public class ExperimentalHasher extends Hasher {
 	private final JnaUint32 iterations = new JnaUint32(4);
 	private final JnaUint32 memory = new JnaUint32(16384);
 	private final JnaUint32 parallelism = new JnaUint32(4);
+	/* post 10800: 
+	private final JnaUint32 iterations = new JnaUint32(1);
+	private final JnaUint32 memory = new JnaUint32(524288);
+	private final JnaUint32 parallelism = new JnaUint32(1);
+	*/
 	private final JnaUint32 saltLenI = new JnaUint32(16);
 	private final JnaUint32 hashLenI = new JnaUint32(32);
 	private final Size_t saltLen = new Size_t(16l);
@@ -159,6 +168,12 @@ public class ExperimentalHasher extends Hasher {
 		long statEnd = 0l;
 
 		try { //(AffinityLock al = AffinityLock.acquireCore()) {
+			boolean bound = true;
+			BitSet affinity = Affinity.getAffinity();
+			//System.out.println("worker " + id + " affinity: " + affinity.toString());
+			if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
+				bound = false;
+			}
 			while (doLoop && active) {
 				statCycle = System.currentTimeMillis();
 				statBegin = System.nanoTime();
@@ -223,7 +238,32 @@ public class ExperimentalHasher extends Hasher {
 				this.loopTime += System.currentTimeMillis() - statCycle;
 	
 				if (this.hashCount > this.targetHashCount || this.loopTime > this.maxTime) {
-					doLoop = false;
+					if (!bound) { // no affinity?
+						// make an attempt to grab affinity.
+						AffinityLock lock = AffinityLock.acquireLock(false); //myid);
+						if (!lock.isBound()) {
+							lock = AffinityLock.acquireLock();
+						}
+						if (!lock.isBound()) {
+							lock = AffinityLock.acquireCore();
+						}
+						if (!lock.isBound()) {
+							bound = false;
+						} else {
+							bound = true;
+						}
+					}
+					if (!bound) {
+						//System.out.println("Ending worker " + this.id);
+						doLoop = false;
+					} else {
+						//System.out.println("Ending a session for worker " + this.id);
+						this.hashEnd = System.currentTimeMillis();
+						this.hashTime = this.hashEnd - this.hashBegin;
+						this.hashBegin = System.currentTimeMillis();
+						completeSession();
+						this.loopTime = 0l;
+					}
 				}
 			}
 		} catch (Throwable e) {
