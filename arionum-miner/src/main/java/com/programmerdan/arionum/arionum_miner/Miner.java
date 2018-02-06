@@ -1133,7 +1133,7 @@ public class Miner implements UncaughtExceptionHandler {
 
 						// argon, just the hash bit since params are universal
 						data.append(URLEncoder.encode("argon", "UTF-8")).append("=")
-								.append(URLEncoder.encode(argon.substring(29), "UTF-8")).append("&");
+								.append(URLEncoder.encode(argon.substring(31), "UTF-8")).append("&");
 						// nonce
 						data.append(URLEncoder.encode("nonce", "UTF-8")).append("=")
 								.append(URLEncoder.encode(nonce, "UTF-8")).append("&");
@@ -1152,9 +1152,9 @@ public class Miner implements UncaughtExceptionHandler {
 						coPrint.updateLabel().a(Attribute.LIGHT).p("Submitting to ").textData().fs(node).p(" ")
 							.updateLabel().a(Attribute.LIGHT).p(" a ").dlData().p(submitDL)
 							.updateLabel().a(Attribute.LIGHT).ln(" DL nonce.").p("  nonce: ").textData().p(nonce)
-							.updateLabel().a(Attribute.LIGHT).p(" argon: ").textData().ln(argon.substring(29)).clr();
+							.updateLabel().a(Attribute.LIGHT).p(" argon: ").textData().ln(argon.substring(31)).clr();
 						/*System.out.println("Submitting to " + node + " a " + submitDL + " DL nonce. \n  nonce: " + nonce
-								+ " argon: " + argon.substring(29));*/
+								+ " argon: " + argon.substring(31));*/
 
 						out.flush();
 						out.close();
