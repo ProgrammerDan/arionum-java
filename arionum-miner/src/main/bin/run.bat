@@ -1,1 +1,1 @@
-java -Djna.library.path="%cp%" -jar arionum-miner-java.jar
+java -Djna.library.path="%cd%" -jar arionum-miner-java.jar
