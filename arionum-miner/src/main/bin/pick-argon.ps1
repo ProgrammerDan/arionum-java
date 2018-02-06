@@ -18,21 +18,18 @@ cd Coreinfo
 
 $extensions = .\Coreinfo.exe /accepteula
 
-# $avx512f = select-string -Pattern "AVX512F" -InputObject $extensions
+$avx512f = select-string -Pattern "AVX512F" -InputObject $extensions
 $avx2 = select-string -Pattern "AVX2" -InputObject $extensions
 $avx = select-string -Pattern "AVX" -InputObject $extensions
 
 cd ..
 
-<#
 if (-not ([string]::IsNullOrEmpty($avx512f)))
 {
 echo "Found AVX512F extensions."
 cp src\main\resources\win32-x86-64\argon2-avx512f.dll argon2.dll
 }
-else
-#>
-if (-not ([string]::IsNullOrEmpty($avx2)))
+elseif (-not ([string]::IsNullOrEmpty($avx2)))
 {
 echo "Found AVX2 extensions."
 cp src\main\resources\win32-x86-64\argon2-avx2.dll argon2.dll
