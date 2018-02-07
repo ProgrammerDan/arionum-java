@@ -16,19 +16,19 @@ import com.sun.jna.Pointer;
  * argon2_context type for C interaction.
  */
 public class Argon2_Context extends Structure {
-	public Pointer out; /* output array */
+	public char[] out; /* output array */
 	public JnaUint32 outlen;
 
-	public Pointer pwd;
+	public char[] pwd;
 	public JnaUint32 pwdlen;
 
-	public Pointer salt;
+	public char[] salt;
 	public JnaUint32 saltlen;
 
-	public Pointer secret;
+	public char[] secret;
 	public JnaUint32 secretln;
 
-	public Pointer ad;
+	public char[] ad;
 	public JnaUint32 adlen;
 
 	public JnaUint32 t_cost;
