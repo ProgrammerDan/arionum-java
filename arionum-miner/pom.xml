@@ -94,7 +94,7 @@
 							<cmdLine></cmdLine>
 							<chdir>.</chdir>
 							<priority>normal</priority>
-							<downloadUrl>http://java.com/download</downloadUrl>
+							<downloadUrl>http://www.oracle.com/technetwork/java/javase/downloads/jre8-downloads-2133155.html</downloadUrl>
 							<supportUrl></supportUrl>
 							<stayAlive>false</stayAlive>
 							<restartOnCrash>false</restartOnCrash>
@@ -107,7 +107,7 @@
 								<minVersion>1.8.0</minVersion>
 								<maxVersion></maxVersion>
 								<jdkPreference>preferJre</jdkPreference>
-								<runtimeBits>64/32</runtimeBits>
+								<runtimeBits>64</runtimeBits>
 							</jre>
 							<versionInfo>
 								<fileVersion>0.2.2.0</fileVersion>
