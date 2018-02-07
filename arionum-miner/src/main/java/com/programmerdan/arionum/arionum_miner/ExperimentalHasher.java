@@ -58,14 +58,9 @@ import com.programmerdan.arionum.arionum_miner.jna.*;
  */
 public class ExperimentalHasher extends Hasher {
 
-	private final JnaUint32 iterations = new JnaUint32(4);
-	private final JnaUint32 memory = new JnaUint32(16384);
-	private final JnaUint32 parallelism = new JnaUint32(4);
-	/* post 10800: 
 	private final JnaUint32 iterations = new JnaUint32(1);
 	private final JnaUint32 memory = new JnaUint32(524288);
 	private final JnaUint32 parallelism = new JnaUint32(1);
-	*/
 	private final JnaUint32 saltLenI = new JnaUint32(16);
 	private final JnaUint32 hashLenI = new JnaUint32(32);
 	private final Size_t saltLen = new Size_t(16l);
@@ -105,23 +100,7 @@ public class ExperimentalHasher extends Hasher {
 	
 	@Override
 	public void newHeight(long oldBlockHeight, long newBlockHeight) {
-		if (oldBlockHeight < 10800 && newBlockHeight >= 10800) {
-			iterations.setValue(1);
-			parallelism.setValue(1);
-			memory.setValue(524288l);
-			encLen.setValue(argonlib.argon2_encodedlen(iterations, memory, parallelism, saltLenI, hashLenI,
-					argonType).longValue());
-			encoded = new byte[encLen.intValue()];
-		} else if (newBlockHeight >= 10800) { // sanity doublecheck.
-			if (memory.longValue() != 524288l) {
-				iterations.setValue(1);
-				parallelism.setValue(1);
-				memory.setValue(524288);
-				encLen.setValue(argonlib.argon2_encodedlen(iterations, memory, parallelism, saltLenI, hashLenI,
-						argonType).longValue());
-				encoded = new byte[encLen.intValue()];
-			}
-		}
+		// no-op, we are locked into 10800 > territory now
 	}
 
 	private void genNonce() {
