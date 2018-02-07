@@ -10,6 +10,9 @@ This library is GPL3
 */
 import com.sun.jna.Library;
 import com.sun.jna.Native;
+import com.sun.jna.Pointer;
+import com.sun.jna.Callback;
+import com.sun.jna.ptr.PointerByReference;
 
 /**
  * JNA bindings for Argon2.
@@ -24,6 +27,9 @@ public interface Argon2Library extends Library {
      * Return code if everything is okay.
      */
     int ARGON2_OK = 0;
+
+
+    int argon2_ctx(Argon2_Context context, Argon2_type type);
 
     /*
     int argon2i_hash_encoded(const uint32_t t_cost, const uint32_t m_cost,
@@ -99,4 +105,14 @@ public interface Argon2Library extends Library {
      * @return The error message associated with the given error code.
      */
     String argon2_error_message(int error_code);
+
+
+    public interface AllocateFunction extends Callback {
+        int invoke(PointerByReference memory, Size_t byte_to_allocate);
+    }
+    
+    public interface DeallocateFunction extends Callback {
+        void invoke(Pointer memory, Size_t byte_to_allocate);
+    }
+ 
 }
