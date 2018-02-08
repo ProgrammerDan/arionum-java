@@ -1053,8 +1053,6 @@ public class Miner implements UncaughtExceptionHandler {
 	}
 		
 	private void printWorkerStats() {
-		/*System.out.println(String.format(" %7s %5s %5s %7s %7s %8s %8s %8s %7s %5s %6s", "Streams", "Runs", "H/run", "Cur H/s",
-				"Cur TiC%", "Cur WL%", "Argon %", "Sha %", "Shares", "Finds", "Reject"));*/
 		int recentSize = 0;
 		long runs = 0;
 		double avgRate = 0.0d;
@@ -1098,10 +1096,6 @@ public class Miner implements UncaughtExceptionHandler {
 				.p(" ").dlData().fp("%5d", finds).clr()
 				.p(" ").dlData().fp("%6d", failures).clr().ln().clr();
 
-			/*System.out.println(String.format(" %7d %5d %5d %7.2f %7.2f %8.3f %8.3f %8.3f %7d %5d %6d", this.hasherCount.get(),
-					runs, this.hashesPerSession, avgRate / (double) ((double) runs / (double) this.hasherCount.get()),
-					coreEff / (double) runs, waitEff / (double) runs, argEff / (double) runs, shaEff / (double) runs, shares, finds, failures));*/
-	
 		} catch (Throwable t) {
 			t.printStackTrace();
 		}
@@ -1153,8 +1147,6 @@ public class Miner implements UncaughtExceptionHandler {
 							.updateLabel().a(Attribute.LIGHT).p(" a ").dlData().p(submitDL)
 							.updateLabel().a(Attribute.LIGHT).ln(" DL nonce.").p("  nonce: ").textData().p(nonce)
 							.updateLabel().a(Attribute.LIGHT).p(" argon: ").textData().ln(argon.substring(30)).clr();
-						/*System.out.println("Submitting to " + node + " a " + submitDL + " DL nonce. \n  nonce: " + nonce
-								+ " argon: " + argon.substring(30));*/
 
 						out.flush();
 						out.close();
@@ -1166,7 +1158,6 @@ public class Miner implements UncaughtExceptionHandler {
 							coPrint.updateLabel().a(Attribute.LIGHT).p("Submit of ").textData().p(nonce)
 								.updateLabel().a(Attribute.LIGHT).p(" failure: ").textData().f(FColor.RED).p(con.getResponseMessage())
 								.updateLabel().a(Attribute.LIGHT).ln(". We will retry.").clr();
-							/*System.out.println("Submit of " + nonce + " failure: " + con.getResponseMessage());*/
 							con.disconnect();
 							failures++;
 							submitTime(System.currentTimeMillis() - executionTimeTracker);
@@ -1183,14 +1174,12 @@ public class Miner implements UncaughtExceptionHandler {
 									.clr().a(Attribute.BOLD).a(Attribute.UNDERLINE).f(FColor.RED).p("rejected")
 									.clr().updateLabel().a(Attribute.LIGHT).p(", nonce did not confirm: ")
 									.textData().f(FColor.RED).ln((String) obj.get("status")).clr();
+								System.out.println(" Raw Failure: " + obj.toJSONString());
 
-								/*System.out.println("Submit of " + nonce + " rejected, nonce did not confirm: "
-										+ (String) obj.get("status"));*/
 							} else {
 								coPrint.updateLabel().a(Attribute.LIGHT).p("Submit of ").textData().p(nonce)
 									.updateLabel().a(Attribute.LIGHT).ln(" confirmed!").clr();
 								
-								//System.out.println("Submit of " + nonce + " confirmed!");
 							}
 							notDone = false;
 
@@ -1205,15 +1194,11 @@ public class Miner implements UncaughtExceptionHandler {
 							.textData().f(FColor.RED).p(ioe.getMessage())
 							.updateLabel().a(Attribute.LIGHT).ln(". We will retry.").clr();
 
-						/*System.err.println("Non-fatal but tragic: Failed during construction or receipt of submission: "
-								+ ioe.getMessage());*/
 						submitTime(System.currentTimeMillis() - executionTimeTracker);
 					}
 					if (failures > 5) {
 						notDone = false;
 						coPrint.textData().f(FColor.RED).ln("After more then five failed attempts to submit this nonce, we are giving up.").clr();
-						/*System.err.println(
-								"After more then five failed attempts to submit this nonce, we are giving up.");*/
 					} else if (failures > 0) {
 						try {
 							Thread.sleep(50l);

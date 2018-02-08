@@ -167,10 +167,9 @@ public class ExperimentalHasher extends Hasher {
 		long statShaEnd = 0l;
 		long statEnd = 0l;
 
-		try { //(AffinityLock al = AffinityLock.acquireCore()) {
+		try {
 			boolean bound = true;
 			BitSet affinity = Affinity.getAffinity();
-			//System.out.println("worker " + id + " affinity: " + affinity.toString());
 			if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
 				bound = false;
 			}

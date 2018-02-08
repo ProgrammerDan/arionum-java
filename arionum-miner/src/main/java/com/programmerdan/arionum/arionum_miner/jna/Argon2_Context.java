@@ -4,6 +4,7 @@ package com.programmerdan.arionum.arionum_miner.jna;
 
 JNA wraps for argon context so I can pin memory
 
+MIT License, Copyright ProgrammerDan 2018
 */
 
 import java.util.List;
@@ -16,19 +17,19 @@ import com.sun.jna.Pointer;
  * argon2_context type for C interaction.
  */
 public class Argon2_Context extends Structure {
-	public char[] out; /* output array */
+	public Pointer out;
 	public JnaUint32 outlen;
 
-	public char[] pwd;
+	public Pointer pwd;
 	public JnaUint32 pwdlen;
 
-	public char[] salt;
+	public Pointer salt;
 	public JnaUint32 saltlen;
 
-	public char[] secret;
-	public JnaUint32 secretln;
+	public Pointer secret;
+	public JnaUint32 secretlen;
 
-	public char[] ad;
+	public Pointer ad;
 	public JnaUint32 adlen;
 
 	public JnaUint32 t_cost;

@@ -34,6 +34,11 @@ import java.util.Base64;
 import java.util.Base64.Encoder;
 import java.util.Random;
 import java.util.BitSet;
+import java.util.LinkedList;
+
+import com.sun.jna.Memory;
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.PointerByReference;
 
 import net.openhft.affinity.Affinity;
 import net.openhft.affinity.AffinityLock;
@@ -41,22 +46,37 @@ import net.openhft.affinity.AffinityLock;
 import com.programmerdan.arionum.arionum_miner.jna.*;
 
 /**
- * The intent for this hasher is deeper self-inspection of running times of various components. It can be used as a testbed for comparative performance. It is not meant to be used for general use
- *
- * This particular experimental hasher takes advantage of an observation: namely, that we're doing double the randomness minimally necessary for the scheme, since the argon2i implementation here and in the php reference internally salts the
- * "password" with 32 bytes of random data. So the nonce itself can be considered just a payload, fixed entity, and allow the salting of the argon2i to control uniformly random generation of SHA-512 DL outcomes.
- * 
- * This gives me 5-10% H/s speedups on isolated testing with no increase in rejections. Block finds and shares remain as expected for H/s observed.
- * 
- * Another indicator of improved performance is tracking reveals 99.97% of time is spent in argon2i codepath, vs. between 99.8 and 99.9% for other cores. This might sound small but adds up in a big way over time, as its a per-hash
- * improvement.
- * 
- * Once a nonce is submitted, it is discarded and a new one generated, as the pool does not allow resubmission of prior nonces.
+ * This function means serious business.
+ * With the Hard Fork in Arionum increasing by nearly two orders of magnitude the per-hash memory requirements, 
+ * the allocation of memory became a serious performance bottleneck for most normal CPU miners.
+ * This hasher attempts to address that, by generating a pool of massive memory "blocks" that are passed
+ * to the argon2 function and reused. It is conservative, keeping a static "scratch" pool of available memory
+ * blocks and passing them to new Hashers as needed, who (should) return them to the scratch pool when they are
+ * done. New memory blocks are only allocated if the scratch pool is exhausted, but then again, those new
+ * blocks are then preserved within the pool.
+ * Initial testing showed about 25% performance gain by removing the bulk of memory alloc and dealloc calls in this
+ * fashion.
  * 
  * @author ProgrammerDan (Daniel Boston)
  *
  */
-public class MappedHasher extends Hasher {
+public class MappedHasher extends Hasher implements Argon2Library.AllocateFunction, Argon2Library.DeallocateFunction {
+	/* Scratch "pool" of massive memory pages. */
+	private static LinkedList<Memory> scratches = new LinkedList<>();
+	private static Memory getScratch() {
+		Memory mem = scratches.poll();
+		if (mem == null) {
+			return new Memory(524288l*1024l);
+		} else {
+			return mem;
+		}
+	}
+	private static void returnScratch(Memory mem) {
+		scratches.push(mem);
+	}
+
+	/*Local Hasher vars*/
+	private Memory scratch = null;
 
 	private final Argon2_Context context;
 
@@ -79,13 +99,20 @@ public class MappedHasher extends Hasher {
 		argonlib = Argon2Library.INSTANCE;
 		context  = new Argon2_Context();
 		context.outlen = new JnaUint32(32);
-		context.out = new byte[32];
+		context.out = new Memory(32l);
 		// assigned per hash context.pwdLen 
 		context.saltlen = new JnaUint32(16);
 		context.secret = null;
 		context.secretlen = new JnaUint32(0);
 		context.ad = null;
 		context.adlen = new JnaUint32(0);
+
+		context.t_cost = iterations;
+		context.m_cost = memory;
+		context.lanes = parallelism;
+		context.threads = parallelism;
+		context.flags = Argon2Library.ARGON2_DEFAULT_FLAGS;
+		context.version = new JnaUint32(0x13);
 
 		encLen = argonlib.argon2_encodedlen(iterations, memory, parallelism, saltLenI, hashLenI,
 				argonType);
@@ -98,8 +125,10 @@ public class MappedHasher extends Hasher {
 	private String rawHashBase;
 	private byte[] nonce = new byte[32];
 	private byte[] salt = new byte[16];
+	private Memory m_salt = new Memory(16l);
 	private String rawNonce;
 	private byte[] hashBaseBuffer;
+	private Memory m_hashBaseBuffer;
 	private Size_t hashBaseBufferSize;
 	private byte[] fullHashBaseBuffer;
 
@@ -144,13 +173,19 @@ public class MappedHasher extends Hasher {
 
 		hashBaseBuffer = rawHashBase.getBytes();
 		hashBaseBufferSize = new Size_t(hashBaseBuffer.length);
+		m_hashBaseBuffer = new Memory(hashBaseBuffer.length);
 		fullHashBaseBuffer = new byte[hashBaseBuffer.length + encLen.intValue()];
 
+		m_hashBaseBuffer.write(0, hashBaseBuffer, 0, hashBaseBuffer.length);
 		System.arraycopy(hashBaseBuffer, 0, fullHashBaseBuffer, 0, hashBaseBuffer.length);
 	}
 
 	@Override
 	public void go() {
+		scratch = MappedHasher.getScratch();
+		context.allocate_cbk = this;
+		context.free_cbk = this;
+
 		boolean doLoop = true;
 		this.hashBegin = System.currentTimeMillis();
 
@@ -179,10 +214,9 @@ public class MappedHasher extends Hasher {
 		long statShaEnd = 0l;
 		long statEnd = 0l;
 
-		try { //(AffinityLock al = AffinityLock.acquireCore()) {
+		try {
 			boolean bound = true;
 			BitSet affinity = Affinity.getAffinity();
-			//System.out.println("worker " + id + " affinity: " + affinity.toString());
 			if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
 				bound = false;
 			}
@@ -190,14 +224,56 @@ public class MappedHasher extends Hasher {
 				statCycle = System.currentTimeMillis();
 				statBegin = System.nanoTime();
 				try {
-					insRandom.nextBytes(salt); // 47 ns
+					//insRandom.nextBytes(salt); // 47 ns
+					random.nextBytes(salt);
+					m_salt.write(0, salt, 0, 16);
 	
 					statArgonBegin = System.nanoTime();
 	
-					argonlib.argon2i_hash_encoded(iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize, salt,
+					/*argonlib.argon2i_hash_encoded(iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize, salt,
 							saltLen, hashLen, encoded, encLen); // refactor saves like 30,000-200,000 ns per hash // 34.2 ms
-																// -- 34,200,000 ns
+					*/
+											// -- 34,200,000 ns
+					// set argon params in context..
+					context.out = new Memory(32l);//new byte[32];
+					context.salt = m_salt;
+					context.pwdlen = new JnaUint32(hashBaseBuffer.length);
+					m_hashBaseBuffer.write(0, hashBaseBuffer, 0, hashBaseBuffer.length);
+					context.pwd = m_hashBaseBuffer;
+					int res = argonlib.argon2_ctx(context, argonType);
+					if (res != Argon2Library.ARGON2_OK) {
+						System.out.println("HASH FAILURE!" + res);
+						System.out.println(" hashes: " + hashCount);
+						System.exit(res);
+					}
+					int res2 = argonlib.encode_ctx(encoded, encLen, context, argonType);
+					if (res2 != Argon2Library.ARGON2_OK) {
+						System.out.println("ENCODE FAILURE! " + res2);
+					}
+					//byte[] method1 = new byte[encoded.length];
+					//System.arraycopy(encoded, 0, method1, 0, encoded.length);
+					
+					//argonlib.argon2i_hash_encoded(iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize, salt,
+					//		saltLen, hashLen, encoded, encLen); // refactor saves like 30,000-200,000 ns per hash // 34.2 ms
+
 					statArgonEnd = System.nanoTime();
+					/*if (encoded.length == method1.length) {
+						System.out.println(String.format("Verification for method \n%d vs baseline \n%d", argonlib.argon2i_verify(method1, m_hashBaseBuffer.getByteArray(0, hashBaseBuffer.length), new Size_t(hashBaseBuffer.length)), argonlib.argon2i_verify(encoded, hashBaseBuffer, new Size_t(hashBaseBuffer.length))));
+						for (int i = 0; i < encoded.length; i++) {
+							if (encoded[i] != method1[i]) {
+								System.out.println(String.format("For same salts \n%s vs \n%s and same pwd \n%s vs \n%s method 1 produced \n%s vs baseline \n%s", 
+									encoder.encodeToString(m_salt.getByteArray(0,16)), encoder.encodeToString(salt), 
+									new String(m_hashBaseBuffer.getByteArray(0, hashBaseBuffer.length)), new String(hashBaseBuffer),
+									new String(method1), new String(encoded)
+								));
+								System.exit(-1);
+							}
+						}
+						System.out.println("Hash is same");
+					} else {
+						System.out.println("Encode failure, differing lengths.");
+						System.exit(-1);
+					}*/
 	
 					System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue());
 					// 10-20ns (vs. 1200ns of strings in former StableHasher)
@@ -281,8 +357,28 @@ public class MappedHasher extends Hasher {
 		} catch (Throwable e) {
 			e.printStackTrace();
 		}
+		// automagic ... this.scratch.free(this.scratch.size());
+		//this.scratch.purge();
+		MappedHasher.returnScratch(scratch);
 		this.hashEnd = System.currentTimeMillis();
 		this.hashTime = this.hashEnd - this.hashBegin;
 		this.parent.hasherCount.decrementAndGet();
+	}
+
+	// allocate
+	public int invoke(PointerByReference memory, Size_t byte_to_allocate) {
+		
+		if (byte_to_allocate.intValue() > this.scratch.size()) {
+			return -22; // memory allocation error
+		}
+
+		memory.setValue(this.scratch);
+
+		return 0;
+	}
+
+	// no-op deallcate, wipe?
+	public void invoke(Pointer memory, Size_t byte_to_allocate) {
+		// we ignore this, since we manage memory on our own.
 	}
 }

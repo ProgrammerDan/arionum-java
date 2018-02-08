@@ -1,6 +1,67 @@
 Extended Documentation for Java port of Arionum-miner
 ==========================
 
+# Installation
+
+Choose which image you want to install from the downloads below.
+
+If your hardware supports AVX, AVX2, or AVX512F and you are a Windows user, download the correctly named EXE and run. If your system does not support it, you will know on launch as it will fail noisily.
+
+If you see crazy high hashrates, you are using 32bit java and these programs will _not_ function. Immediately shut off miner and go here:  http://www.oracle.com/technetwork/java/javase/downloads/jre8-downloads-2133155.html and download a 64 bit jre.
+
+# Release details:
+
+* Corrected argon2i included dlls for Windows. Includes a new avx512f build for advanced systems.
+
+* Hot fix for off-by-one in argon submission. If rebuilding locally, follow again all steps as below.
+
+* Auto-adapt to block 10800-hf-resistance to remain compliance with primary node code.
+
+* Re-architected to use CPU affinity and single-threaded argon, so that each core can be pegged individually.
+
+* Improved stats, including colorized display for Windows and \*nix
+
+* Advanced installation options for maximizing performance.
+
+## Advanced installation:
+
+### Windows:
+
+1. Install Maven, git, and Java 8 JDK (minimum). 
+
+2. Clone this repository locally, and navigate to `arionum-miner` folder.
+
+3. Run `mvn clean package`
+
+4. Run in a Command Prompt: `pick-argon.bat` -- it will ask for Administrator escalation, this is to check for hardware features, please accept.
+
+5. Run miner using `run.bat`.
+
+Alternatively, if you know that your CPU supports AVX2 or AVX instructions, download the appropriate pre-built .exe here.
+
+If you are truly a glutton for punishment, you can download Visual Studio, import the argon2i library that I host here: http://github.com/ProgrammerDan/arionum-argon2 import it into visual studio, and build it locally. No warrantees, but you can use the Static Release profiles.
+
+
+### Linux:
+
+1. Install Maven, git, 64bit Java 8 JDK, make, and gcc.
+
+2. Clone this repository locally, and navigate to `arionum-miner` folder.
+
+3. Run `mvn clean package`
+
+4. Run `chmod +x build-argon.sh`
+
+5. Run `build-argon.sh`
+
+6. Run miner using `run.sh` -- this will use the locally built high-performance argon2i libraries automatically.
+
+For Linux users, I _strongly_ recommend using these instructions.
+
+---------------------------
+
+# Advanced Runtime Support
+
 New as of 0.1.0 and later versions, just run the miner! Don't mess with command line flags.
 
 If you want to use command line flags, however, follow along:
@@ -18,9 +79,7 @@ And if that config doesn't exist, it will create it with the answers you give to
 
 For pool-based mining, full command line flags:
 
-```  java -jar arionum-miner-[version].jar pool [pool address] [wallet address] [# hashers] [hasher core] [colored output]```
-
-**version**: This is the compiled version, usually something like 0.0.7-SNAPSHOT. See the `run-pool.sh` for the correct one based on your compiled version
+```  java -jar arionum-miner-java.jar pool [pool address] [wallet address] [# hashers] [hasher core] [colored output]```
 
 **pool address**: If you use the main pool, http://aropool.com -- if you host your own pool, use that pool's address.
 
@@ -30,13 +89,9 @@ For pool-based mining, full command line flags:
 
 **hasher core**: Currently, one of:
 
-    `basic`: a core that is line for line basically the same as the php-miner's hasher
+    `standard`: Stable, but far from php-parity. This hasher tries to squeeze even more performance out of your CPU cores. Current Default.
 
-    `debug`: a core that shows runtimes of various subcomponents of the hashers as they run. Very chatty. Not for long term use.
-
-    `stable`: Stable, but drifting from php-parity. This hasher tries to squeeze even more performance out of your CPU cores. Current Default.
-
-    `experimental`:  Bleeding edge. Might be faster, might have tradeoffs, no warrantees.
+    `experimental`:  Bleeding edge. Will likely be much faster, might have tradeoffs, no warrantees.
 
 **colored output**: Only supported in linux, set to true to add some color to the output of the statistic updates. Note, this isn't working yet.
 
@@ -44,9 +99,7 @@ For pool-based mining, full command line flags:
 
 For solo mining, full command line flags:
 
-```  java -jar arionum-miner-[version].jar solo [node address] [public-key] [private-key] [# hashers] [hasher core] [colored output]```
-
-**version**: This is the compiled version, usually something like 0.0.7-SNAPSHOT. See the `run-pool.sh` for the correct one based on your compiled version
+```  java -jar arionum-miner-java.jar solo [node address] [public-key] [private-key] [# hashers] [hasher core] [colored output]```
 
 **node address**: The address of the node you want to directly send discovered blocks
 
@@ -58,13 +111,9 @@ For solo mining, full command line flags:
 
 **hasher core**: Currently, one of:
 
-    `basic`: a core that is line for line basically the same as the php-miner's hasher
+    `standard`: Stable, but far from php-parity. This hasher tries to squeeze even more performance out of your CPU cores. Current Default.
 
-    `debug`: a core that shows runtimes of various subcomponents of the hashers as they run. Very chatty. Not for long term use.
-
-    `stable`: Stable, but drifting from php-parity. This hasher tries to squeeze even more performance out of your CPU cores. Current Default.
-
-    `experimental`:  Bleeding edge. Might be faster, might have tradeoffs, no warrantees.
+    `experimental`:  Bleeding edge. Will likely be much faster, might have tradeoffs, no warrantees.
 
 **colored output**: Only supported in linux, set to true to add some color to the output of the statistic updates.
 

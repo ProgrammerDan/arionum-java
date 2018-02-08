@@ -17,7 +17,7 @@ Enjoy!
 
 Get dependency:
 
-* Java 8 JRE (OpenJRE 8 and Oracle Java 8 both work just fine)
+* 64bit Java 8 JRE (OpenJRE 8 and Oracle Java 8 both work just fine)
 
 * On Linux or MacOSX, download the latest ".jar" release file
 
@@ -28,6 +28,8 @@ Get dependency:
 * On Windows, download the latest ".exe" release file
 
     * Double click the .exe to run
+
+    * For some advanced systems, a special, optimized version is available. Check if your CPU supports AVX, AVX2, or AVX512F and use that version if supported.
 
 * Follow interactive prompt -- if a default is offered, press "enter" key to accept it. I recommend using defaults.
 
@@ -43,7 +45,7 @@ Get depencies
 
 * git
 
-* Java 8 SDK (OpenJDK8 and Oracle Java 8 both work just fine) 
+* 64bit Java 8 SDK (OpenJDK8 and Oracle Java 8 both work just fine) 
 
 Clone this repository, change directory into ```arionum-miner```
 
@@ -61,7 +63,7 @@ Pick a place to install. For linux:
 
 `mvn clean package`
 
-`./run-pool.sh your-address-here`
+`./run.sh`
 
 #### To run
 
@@ -75,7 +77,7 @@ Execute `arionum-miner-java.exe` and follow the prompts on screen
 
 ##### For All:
 
-Take the defaults to run the pool, pointing at http://aropool.com , using your wallet address. If you take the defaults, the "stable" or "standard" miner will run, using cores / 4.
+Take the defaults to run the pool, pointing at http://aropool.com , using your wallet address. If you take the defaults, the "standard" miner will run, using cores - 1.
 
 
 ##### For solo mining in Linux:
@@ -87,7 +89,7 @@ Please note solo hasn't been tested, but it's 99.9% the same code so should be f
 
 ##### General advice:
 
-Rule of thumb is no more then 1 miner per 4 cores/vcores.
+Rule of thumb is no more then 1 miner per core/vcore.
 
 ----------------------
 # Comparison to php-miner
@@ -110,9 +112,11 @@ Differences:
 
 * The hashers never stop -- the reference PHP implementation pauses the hasher during update requests and nonce submissions. The java hashers never stop.
 
-* (Very slight) optimizations -- the Java miner has easy swap support for alternate "core" types, with "basic", "debug" and "experimental" for now; basic is equivalent to php-reference, debug is chatty giving runtime details, and experimental has some improvements to improve the amount of time the hasher spends computing argon2i hashes instead of other things.
+* Hasher threads will try to affine to CPU cores -- "reserve" the core all to themselves.
 
-* More information on active hashing activity -- screen updates every 15s with details on active hashers, how many hashes they have checked, and how close to finding shares or blocks
+* Small to significant optimizations -- some "micro", some significant via cpu instruction sets. See release instructions for more details.
+
+* More information on active hashing activity -- screen updates every few seconds with details on active hashers, how many hashes they have checked, and how close to finding shares or blocks
 
 * Visual notice when a new block has started, with the "difficulty" for the new block, and your personal best DL for the prior block. Note that difficulty is inverse -- smaller is harder, larger is easier.
 
@@ -121,7 +125,7 @@ Differences:
 
 * ~~Add address checking as here: https://github.com/arionum/miner/commit/e14b696362fb79d60c4ff8bc651185740b8021d9~~ Done in commit dd5388c
 
-* Colored screen output to better see labels / stats and keep track of hashers
+* ~~Colored screen output to better see labels / stats and keep track of hashers~~
 
 * Auto-adaptive hashing -- automatically add more hasher instances until peak rate is achieved
 
@@ -130,7 +134,7 @@ Differences:
 ---------------------
 ### Known caveates
 
-* For systems with many, many cores (24, 32) it may be necessary to run multiple instances of this miner. Try using multiple miners with a max of 8 hashers each; this has worked well in initial testing.
+* For multi-socket systems, try running a single full instance of the Java miner per socket. Use operating system tools to bind to the socket.
 
 * Hash Rate is "best effort", and might be imprecise. Pool Hash Rate is based on self-reporting, so minor inaccuracies are not an issue. Difficulty is based on median time between block discovery.
 

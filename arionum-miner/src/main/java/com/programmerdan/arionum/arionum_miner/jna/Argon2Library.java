@@ -28,8 +28,20 @@ public interface Argon2Library extends Library {
      */
     int ARGON2_OK = 0;
 
+    JnaUint32 ARGON2_DEFAULT_FLAGS = new JnaUint32(0);
 
+
+    /*
+     * Uses an Argon Context to generate a hash. The hash is in the "out" field.
+     */
     int argon2_ctx(Argon2_Context context, Argon2_type type);
+
+
+    /*
+     * Uses an argon context to render a fully encoded Argon2 hash string in a
+     *  standard form. This is an Arionum-specific addition to the library header.
+     */
+    int encode_ctx(byte[] dst, Size_t dst_len, Argon2_Context ctx, Argon2_type type);
 
     /*
     int argon2i_hash_encoded(const uint32_t t_cost, const uint32_t m_cost,
@@ -84,6 +96,7 @@ public interface Argon2Library extends Library {
     int argon2i_verify(const char *encoded, const void *pwd, const size_t pwdlen);
      */
     int argon2i_verify(byte[] encoded, byte[] pwd, Size_t pwdlen);
+
 
     /**
      * Returns the encoded hash length for the given input parameters.

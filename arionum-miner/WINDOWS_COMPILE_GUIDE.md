@@ -7,7 +7,7 @@ Only use these steps if the release `.exe` doesn't work for you, otherwise, pref
 ### Necessary program's
 - [Maven](https://maven.apache.org/)
 - [Git](https://desktop.github.com/)
-- [JavaSDK](http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html)
+- [64Bit JavaSDK](http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html)
 
 ### Installation
 1. Install all above programs
@@ -28,7 +28,7 @@ Only use these steps if the release `.exe` doesn't work for you, otherwise, pref
 6. Start up a command prompt
 7. Navigate towards the aronium-miner directory (the one with the POM.xml file)
 8. Execute “mvn clean package” (do not used quotes)
-9. **Edit the run-pool.bat file.** Change the part in the code to your arionum wallet adress and the amount of threads you want to use (standard is 1)
+9. **Run the run.bat file.** Follow on screen prompts to configure your miner.
 10. **Rename the aronium-java folder** to arionum-miner to avoid conflicts with GitHub Desktop if you want to catch the latest release.
 11. Start up the bat file you just created.
 
