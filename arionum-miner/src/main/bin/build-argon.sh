@@ -16,7 +16,10 @@ git checkout argon2i-slim
 
 make clean && CFLAGS="-m64" OPTTARGET=native NO_THREADS=1 make
 
-cp libargon2.so.1 libargon2.so
+case "$OSTYPE" in
+  darwin*) cp libargon2.1.dylib libargon2.dylib;;
+  *) cp libargon2.so.1 libargon2.so;;
+esac
 
 echo "#! /bin/bash
 java -Djna.library.path=\"`pwd`\" -jar arionum-miner-java.jar" > ../run.sh 
