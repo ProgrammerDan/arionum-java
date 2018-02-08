@@ -16,6 +16,8 @@ echo "We will use master branch, as it is the most stable arionum-focused trimme
 
 git checkout master
 
+git pull
+
 echo "By default we will use a variety of flags to ensure best build for 64 bit x86 compatible hardware."
 echo " You will need to customize these flags if on other architectures."
 
