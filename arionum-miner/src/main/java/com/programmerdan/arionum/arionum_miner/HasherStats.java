@@ -42,8 +42,9 @@ public class HasherStats {
 	public long hashTime;
 	public long scheduledTime;
 	public String id;
+	public String type;
 	
-	public HasherStats(String id, long argonTime, long shaTime, long nonArgonTime, long hashTime, long hashes, long bestDL, long shares, long finds) {
+	public HasherStats(String id, long argonTime, long shaTime, long nonArgonTime, long hashTime, long hashes, long bestDL, long shares, long finds, String type) {
 		this.id = id;
 		this.argonTime = argonTime;
 		this.shaTime = shaTime;
@@ -53,5 +54,6 @@ public class HasherStats {
 		this.bestDL = bestDL;
 		this.shares = shares;
 		this.finds = finds;
+		this.type = type;
 	}
 }

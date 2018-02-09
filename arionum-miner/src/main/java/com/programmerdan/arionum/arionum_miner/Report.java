@@ -72,5 +72,5 @@ public class Report {
 	long shares;
 	long finds;
 	long rejects;
-	
+
 }

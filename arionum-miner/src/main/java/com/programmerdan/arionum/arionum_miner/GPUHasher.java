@@ -187,5 +187,8 @@ public class GPUHasher extends Hasher {
 		System.out.println(id + "] This worker is now inactive.");
 		this.parent.hasherCount.decrementAndGet();
 	}
-	
+
+	public String getType() {
+		return "GPU";
+	}
 }

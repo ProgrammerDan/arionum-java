@@ -51,7 +51,7 @@ public abstract class Hasher implements Runnable{
 			System.err.println("\n\nThis is probably fatal, so exiting now.");
 			System.exit(1);
 		}
-		HasherStats stats = new HasherStats(id, argonTime, shaTime, nonArgonTime, hashTime, hashCount, bestDL, shares, finds);
+		HasherStats stats = new HasherStats(id, argonTime, shaTime, nonArgonTime, hashTime, hashCount, bestDL, shares, finds, getType());
 		parent.workerFinish(stats, this);
 	}
 	
@@ -101,7 +101,7 @@ public abstract class Hasher implements Runnable{
 
 	public void completeSession() {
 		// emulate shutdown / restart, but on dedi thread so don't.
-		HasherStats stats = new HasherStats(id, argonTime, shaTime, nonArgonTime, hashTime, hashCount, bestDL, shares, finds);
+		HasherStats stats = new HasherStats(id, argonTime, shaTime, nonArgonTime, hashTime, hashCount, bestDL, shares, finds, getType());
 		argonTime = 0l;
 		shaTime = 0l;
 		nonArgonTime = 0l;
@@ -178,6 +178,12 @@ public abstract class Hasher implements Runnable{
 	 */
 	public abstract void newHeight(long oldBlockHeight, long newBlockHeight);
 
+	/**
+	 * Lets the hasher return a "type" classification. Should NOT be null.
+	 * @return
+	 */
+	public abstract String getType();
+	
 	public long getHashes() {
 		return this.hashCount;
 	}

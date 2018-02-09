@@ -272,4 +272,8 @@ public class ExperimentalHasher extends Hasher {
 		this.hashTime = this.hashEnd - this.hashBegin;
 		this.parent.hasherCount.decrementAndGet();
 	}
+	
+	public String getType() {
+		return "Legacy";
+	}
 }

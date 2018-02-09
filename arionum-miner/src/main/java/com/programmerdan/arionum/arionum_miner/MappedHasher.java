@@ -381,4 +381,8 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 	public void invoke(Pointer memory, Size_t byte_to_allocate) {
 		// we ignore this, since we manage memory on our own.
 	}
+	
+	public String getType() {
+		return "CPU";
+	}
 }

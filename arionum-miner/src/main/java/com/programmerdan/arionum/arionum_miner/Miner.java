@@ -221,6 +221,13 @@ public class Miner implements UncaughtExceptionHandler {
 	/* Future todo: reassess periodically */
 	private long nextReassess;
 	private Profile toReassess;
+	
+	/* External stats reporting */
+	private String statsHost;
+	private String statsInvoke;
+	private boolean post;
+	private ConcurrentLinkedQueue<HasherStats> statsReport;
+	private final ExecutorService stats;
 
 	public static void main(String[] args) {
 		Miner miner = null;
