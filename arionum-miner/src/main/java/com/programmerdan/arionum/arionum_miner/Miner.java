@@ -1217,8 +1217,8 @@ public class Miner implements UncaughtExceptionHandler {
 					to.append("/").append(statsInvoke).append("?q=discovery");
 					to.append("&id=").append(worker).append("&type=").append(type);
 					if (!post) {
-						to.append("&nonce=").append(nonce)
-							.append("&argon=").append(argon)
+						to.append("&nonce=").append(URLEncoder.encode(nonce, "UTF-8"))
+							.append("&argon=").append(URLEncoder.encode(argon, "UTF-8"))
 							.append("&difficulty=").append(difficulty)
 							.append("&dl=").append(submitDL)
 							.append("&retries=").append(retries);
