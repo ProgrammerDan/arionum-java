@@ -298,7 +298,7 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 	
 					if (finalDuration > 0 && finalDuration <= this.limit) {
 	
-						parent.submit(rawNonce, new String(encoded), finalDuration);
+						parent.submit(rawNonce, new String(encoded), finalDuration, this.difficulty.longValue(), this.getType());
 						if (finalDuration <= 240) {
 							finds++;
 						} else {

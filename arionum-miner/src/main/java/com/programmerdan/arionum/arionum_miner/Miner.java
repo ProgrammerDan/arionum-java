@@ -37,6 +37,7 @@ import java.io.PrintWriter;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.math.BigInteger;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -226,8 +227,11 @@ public class Miner implements UncaughtExceptionHandler {
 	private String statsHost;
 	private String statsInvoke;
 	private boolean post;
+	private ConcurrentHashMap<String, HasherStats> statsStage;
 	private ConcurrentLinkedQueue<HasherStats> statsReport;
 	private final ExecutorService stats;
+	
+	protected static final long REPORTING_INTERVAL = 60000l; // 60 seconds
 
 	public static void main(String[] args) {
 		Miner miner = null;
@@ -471,9 +475,17 @@ public class Miner implements UncaughtExceptionHandler {
 		int coreCap = Runtime.getRuntime().availableProcessors();
 		long nextProfileSwap = 0;
 		long profilesTested = 0;
-
 		/* end autotune */
 
+		/* stats report */
+		this.statsHost = null;
+		this.statsInvoke= "report.php";
+		this.post = false;
+		this.statsStage = new ConcurrentHashMap<String, HasherStats>();
+		this.statsReport = new ConcurrentLinkedQueue<HasherStats>();
+		this.stats = Executors.newCachedThreadPool();
+		/* end stats report */
+		
 		this.hashes = new AtomicLong();
 		this.bestDL = new AtomicLong(Long.MAX_VALUE);
 		this.sessionSubmits = new AtomicLong();
@@ -508,6 +520,14 @@ public class Miner implements UncaughtExceptionHandler {
 				if (args.length > 6) {
 					this.colors = Boolean.parseBoolean(args[6].trim());
 				}
+				if (args.length > 7) {
+					String[] statsReport = args[7].trim().split(" ");
+					if (statsReport != null && statsReport.length > 2) {
+						this.statsHost = statsReport[0];
+						this.statsInvoke = statsReport[1];
+						this.post = statsReport[2].equalsIgnoreCase("y") ? true : statsReport[2].equalsIgnoreCase("n") ? false : Boolean.parseBoolean(statsReport[2]);
+					}
+				}
 			} else if (MinerType.pool.equals(this.type)) {
 				this.privateKey = this.publicKey;
 				this.maxHashers = args.length > 3 ? Integer.parseInt(args[3].trim()) : 1;
@@ -518,6 +538,14 @@ public class Miner implements UncaughtExceptionHandler {
 					this.colors = Boolean.parseBoolean(args[5].trim());
 				}
 
+				if (args.length > 6) {
+					String[] statsReport = args[6].trim().split(" ");
+					if (statsReport != null && statsReport.length > 2) {
+						this.statsHost = statsReport[0];
+						this.statsInvoke = statsReport[1];
+						this.post = statsReport[2].equalsIgnoreCase("y") ? true : statsReport[2].equalsIgnoreCase("n") ? false : Boolean.parseBoolean(statsReport[2]);
+					}
+				}
 			} else if (MinerType.test.equals(this.type)) { // internal test mode, transient benchmarking.
 				this.maxHashers = args.length > 3 ? Integer.parseInt(args[3].trim()) : 1;
 			}
@@ -852,6 +880,8 @@ public class Miner implements UncaughtExceptionHandler {
 			if (cycles % 2 == 0) {
 				refreshFromWorkers();
 			}
+			
+			updateStats();
 
 			cycles++;
 		}
@@ -1023,6 +1053,19 @@ public class Miner implements UncaughtExceptionHandler {
 					} else {
 						offload.incrementAndGet();
 					}
+					
+					/* reporting stats */
+					if (this.statsHost != null) {
+						HasherStats contrib = this.statsStage.computeIfAbsent(worker.type, w -> 
+								{ return new HasherStats(this.worker, 0, 0, 0, System.currentTimeMillis(), 0, 0, 0, 0, w); });
+						
+						contrib.hashes += allHashes;
+						
+						if (System.currentTimeMillis() - contrib.hashTime > REPORTING_INTERVAL) {
+							contrib.hashTime = System.currentTimeMillis() - contrib.hashTime;
+							this.statsReport.offer(this.statsStage.remove(worker.type));
+						}
+					}
 
 				} catch (Throwable e) {
 					coPrint.a(Attribute.BOLD).f(FColor.RED).p("Resolving stats from finished worker ").textData().p(worker.id)
@@ -1112,7 +1155,123 @@ public class Miner implements UncaughtExceptionHandler {
 		}
 	}
 
-	protected void submit(final String nonce, final String argon, final long submitDL) {
+	protected void updateStats() {
+		this.stats.submit( new Runnable() {
+			public void run() {
+				HasherStats latest = null;
+				while((latest = statsReport.poll()) != null) {
+					try {
+						StringBuilder to = new StringBuilder(statsHost);
+						to.append("/").append(statsInvoke).append("?q=report");
+						to.append("&id=").append(latest.id).append("&type=").append(latest.type);
+						if (!post) {
+							to.append("&hashes=").append(latest.hashes)
+								.append("&elapsed=").append(latest.hashTime);
+						}
+						
+						//System.out.println("Reporting stats: " + to.toString());
+	
+						URL url = new URL(to.toString());
+						HttpURLConnection con = (HttpURLConnection) url.openConnection();
+						if (post) {
+							con.setRequestMethod("POST");
+							con.setRequestProperty("Content-type", "application/x-www-form-urlencoded");
+							con.setDoOutput(true);
+							DataOutputStream out = new DataOutputStream(con.getOutputStream());
+		
+							StringBuilder data = new StringBuilder();
+		
+							// argon, just the hash bit since params are universal
+							data.append(URLEncoder.encode("hashes", "UTF-8")).append("=")
+									.append(URLEncoder.encode(Long.toString(latest.hashes), "UTF-8")).append("&");
+							data.append(URLEncoder.encode("elapsed", "UTF-8")).append("=")
+									.append(URLEncoder.encode(Long.toString(latest.hashTime), "UTF-8"));
+							
+							out.writeBytes(data.toString());
+							
+							out.flush();
+							out.close();
+						} else {
+							con.setRequestMethod("GET");
+						}
+						
+						int status = con.getResponseCode();
+						if (status != HttpURLConnection.HTTP_OK) {
+							// quietly fail..?
+							System.err.println("Failed to report stats: " + status);
+						}
+					} catch (IOException ioe) {
+						// quietly fail.
+						System.err.println("Failed to report stats: " + ioe.getMessage());
+					}
+				}
+			}
+		});
+	}
+
+	protected void submitStats(final String nonce, final String argon, final long submitDL, final long difficulty, final String type, final int retries, final boolean accepted) {
+		this.stats.submit( new Runnable() {
+			public void run() {
+				try {
+					StringBuilder to = new StringBuilder(statsHost);
+					to.append("/").append(statsInvoke).append("?q=discovery");
+					to.append("&id=").append(worker).append("&type=").append(type);
+					if (!post) {
+						to.append("&nonce=").append(nonce)
+							.append("&argon=").append(argon)
+							.append("&difficulty=").append(difficulty)
+							.append("&dl=").append(submitDL)
+							.append("&retries=").append(retries)
+							.append("&confirmed=").append(accepted);
+					}
+
+					//System.out.println("Reporting submit: " + to.toString());
+					
+					URL url = new URL(to.toString());
+					HttpURLConnection con = (HttpURLConnection) url.openConnection();
+					if (post) {
+						con.setRequestMethod("POST");
+						con.setRequestProperty("Content-type", "application/x-www-form-urlencoded");
+						con.setDoOutput(true);
+						DataOutputStream out = new DataOutputStream(con.getOutputStream());
+	
+						StringBuilder data = new StringBuilder();
+	
+						data.append(URLEncoder.encode("nonce", "UTF-8")).append("=")
+							.append(URLEncoder.encode(nonce, "UTF-8")).append("&");
+						data.append(URLEncoder.encode("argon", "UTF-8")).append("=")
+							.append(URLEncoder.encode(argon, "UTF-8")).append("&");
+						data.append(URLEncoder.encode("difficulty", "UTF-8")).append("=")
+							.append(URLEncoder.encode(Long.toString(difficulty), "UTF-8")).append("&");
+						data.append(URLEncoder.encode("dl", "UTF-8")).append("=")
+							.append(URLEncoder.encode(Long.toString(submitDL), "UTF-8")).append("&");
+						data.append(URLEncoder.encode("retries", "UTF-8")).append("=")
+							.append(URLEncoder.encode(Long.toString(retries), "UTF-8")).append("&");
+						data.append(URLEncoder.encode("confirmed", "UTF-8")).append("=")
+							.append(URLEncoder.encode(Boolean.toString(accepted), "UTF-8"));
+						
+						out.writeBytes(data.toString());
+						
+						out.flush();
+						out.close();
+					} else {
+						con.setRequestMethod("GET");
+					}
+					
+					int status = con.getResponseCode();
+					if (status != HttpURLConnection.HTTP_OK) {
+						// quietly fail..?
+						System.err.println("Failed to report submit: " + status);
+					}
+				} catch (IOException ioe) {
+					// quietly fail.
+					System.err.println("Failed to report submit: " + ioe.getMessage());
+				}
+			}
+		});
+	}
+	
+	protected void submit(final String nonce, final String argon, final long submitDL, final long difficulty, final String workerType) {
 		this.submitters.submit(new Runnable() {
 			public void run() {
 
@@ -1182,11 +1341,12 @@ public class Miner implements UncaughtExceptionHandler {
 									.clr().updateLabel().a(Attribute.LIGHT).p(", nonce did not confirm: ")
 									.textData().f(FColor.RED).ln((String) obj.get("status")).clr();
 								System.out.println(" Raw Failure: " + obj.toJSONString());
+								submitStats(nonce, argon, submitDL, difficulty, workerType, failures, false);
 
 							} else {
 								coPrint.updateLabel().a(Attribute.LIGHT).p("Submit of ").textData().p(nonce)
 									.updateLabel().a(Attribute.LIGHT).ln(" confirmed!").clr();
-								
+								submitStats(nonce, argon, submitDL, difficulty, workerType, failures, true);
 							}
 							notDone = false;
 
@@ -1206,6 +1366,7 @@ public class Miner implements UncaughtExceptionHandler {
 					if (failures > 5) {
 						notDone = false;
 						coPrint.textData().f(FColor.RED).ln("After more then five failed attempts to submit this nonce, we are giving up.").clr();
+						submitStats(nonce, argon, submitDL, difficulty, workerType, failures, false);
 					} else if (failures > 0) {
 						try {
 							Thread.sleep(50l);
