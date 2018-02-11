@@ -1369,10 +1369,11 @@ public class Miner implements UncaughtExceptionHandler {
 					if (failures > 5) {
 						notDone = false;
 						coPrint.textData().f(FColor.RED).ln("After more then five failed attempts to submit this nonce, we are giving up.").clr();
+						sessionRejects.incrementAndGet();
 						submitStats(nonce, argon, submitDL, difficulty, workerType, failures, false);
 					} else if (failures > 0) {
 						try {
-							Thread.sleep(50l);
+							Thread.sleep(50l*failures);
 						} catch (InterruptedException ioe) {
 						}
 					}
