@@ -1221,8 +1221,10 @@ public class Miner implements UncaughtExceptionHandler {
 							.append("&argon=").append(argon)
 							.append("&difficulty=").append(difficulty)
 							.append("&dl=").append(submitDL)
-							.append("&retries=").append(retries)
-							.append("&confirmed=").append(accepted);
+							.append("&retries=").append(retries);
+						if (accepted) {
+							to.append("&confirmed");
+						}
 					}
 
 					//System.out.println("Reporting submit: " + to.toString());
@@ -1247,8 +1249,9 @@ public class Miner implements UncaughtExceptionHandler {
 							.append(URLEncoder.encode(Long.toString(submitDL), "UTF-8")).append("&");
 						data.append(URLEncoder.encode("retries", "UTF-8")).append("=")
 							.append(URLEncoder.encode(Long.toString(retries), "UTF-8")).append("&");
-						data.append(URLEncoder.encode("confirmed", "UTF-8")).append("=")
-							.append(URLEncoder.encode(Boolean.toString(accepted), "UTF-8"));
+						if (accepted) {
+							data.append(URLEncoder.encode("confirmed", "UTF-8"));
+						}
 						
 						out.writeBytes(data.toString());
 						
