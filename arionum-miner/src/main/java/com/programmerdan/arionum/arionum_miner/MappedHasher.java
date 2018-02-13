@@ -75,9 +75,11 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 		scratches.push(mem);
 	}
 
+	private long[] dlClass = new long[50];
+	
 	/*Local Hasher vars*/
 	private Memory scratch = null;
-
+	
 	private final Argon2_Context context;
 
 	private final JnaUint32 iterations = new JnaUint32(1);
@@ -218,7 +220,11 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 			boolean bound = true;
 			BitSet affinity = Affinity.getAffinity();
 			if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
-				bound = false;
+				Integer lastChance = AggressiveAffinityThreadFactory.AffineMap.get(Affinity.getThreadId());
+				if (lastChance == null || lastChance < 0) {
+					//System.err.println("Unbound.");
+					bound = false;
+				}
 			}
 			while (doLoop && active) {
 				statCycle = System.currentTimeMillis();
@@ -306,6 +312,39 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 						}
 						genNonce(); // only gen a new nonce once we exhaust the one we had
 					}
+					
+					if (finalDuration <= 240) {
+						this.dlClass[0] ++;
+					} else {
+						long cap = 6250l;
+						int index = 1;
+						while (finalDuration > cap) {
+							cap = cap * 2l;
+							/*
+							 * 6250k
+							 * 12500k
+							 * 25k
+							 * 50k
+							 * 100k
+							 * 200k
+							 * 400k
+							 * 800k
+							 * 1.6m
+							 * 3.2m
+							 * 6.4m
+							 * 12.8m
+							 * 25.6m
+							 * 51.2m
+							 * 102.4m
+							 * 204.8m
+							 * 409.6m
+							 * etc
+							 */
+							index++;
+						}
+						if (index > 49) index = 49; 
+						this.dlClass[index] ++;
+					}
 	
 					hashCount++;
 					statEnd = System.nanoTime();
@@ -349,8 +388,9 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 						this.hashEnd = System.currentTimeMillis();
 						this.hashTime = this.hashEnd - this.hashBegin;
 						this.hashBegin = System.currentTimeMillis();
-						completeSession();
+						completeSession(this.dlClass);
 						this.loopTime = 0l;
+						this.dlClass = new long[50];
 					}
 				}
 			}

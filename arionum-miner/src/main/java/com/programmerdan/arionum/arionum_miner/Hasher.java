@@ -51,7 +51,7 @@ public abstract class Hasher implements Runnable{
 			System.err.println("\n\nThis is probably fatal, so exiting now.");
 			System.exit(1);
 		}
-		HasherStats stats = new HasherStats(id, argonTime, shaTime, nonArgonTime, hashTime, hashCount, bestDL, shares, finds, getType());
+		HasherStats stats = new HasherStats(id, argonTime, shaTime, nonArgonTime, hashTime, hashCount, bestDL, shares, finds, getType(), null);
 		parent.workerFinish(stats, this);
 	}
 	
@@ -99,9 +99,47 @@ public abstract class Hasher implements Runnable{
 		this.maxTime = maxTime;
 	}
 
-	public void completeSession() {
+	public void completeSession(Object data) {
 		// emulate shutdown / restart, but on dedi thread so don't.
-		HasherStats stats = new HasherStats(id, argonTime, shaTime, nonArgonTime, hashTime, hashCount, bestDL, shares, finds, getType());
+		HasherStats stats = new HasherStats(id, argonTime, shaTime, nonArgonTime, hashTime, hashCount, bestDL, shares, finds, getType(), data);
+		/*if (data != null) {
+			System.out.println("Session Stats");
+			long[] value = (long[]) data;
+			long max = 0;
+			for (int i = 0; i < value.length; i++) {
+				if (value[i] > max) max = value[i];
+				System.out.print(value[i]);
+			}
+			System.out.print(this.getType() + "] " + value.length + " [");
+			//coPrint.updateMsg().p(key).p("] ").clr();
+			for (int i = 0; i < value.length; i++) {
+				int v = (int) Math.floorDiv(value[i] * 10l, max);
+				/*switch (v) {
+				case 10: coPrint.f(FColor.WHITE); break;
+				case 9: coPrint.a(Attribute.DARK).f(FColor.WHITE); break;
+				case 8: coPrint.a(Attribute.LIGHT).f(FColor.BLACK); break;
+				case 7: coPrint.a(Attribute.LIGHT).f(FColor.GREEN); break;
+				case 6: coPrint.f(FColor.GREEN); break;
+				case 5: coPrint.a(Attribute.DARK).f(FColor.GREEN); break;
+				case 4: coPrint.a(Attribute.DARK).f(FColor.YELLOW); break;
+				case 3: coPrint.f(FColor.YELLOW); break;
+				case 2: coPrint.a(Attribute.LIGHT).f(FColor.YELLOW); break;
+				case 1: coPrint.a(Attribute.LIGHT).f(FColor.RED); break;
+				case 0: coPrint.a(Attribute.DARK).f(FColor.RED); break;
+				}* /
+				if (v == 10) {
+					System.out.print("M");
+					//coPrint.p("M");
+				} else {
+					System.out.print(v);
+					//coPrint.p(v);
+				}
+				
+			}
+			System.out.println();
+			//coPrint.ln().clr();
+
+		}*/
 		argonTime = 0l;
 		shaTime = 0l;
 		nonArgonTime = 0l;

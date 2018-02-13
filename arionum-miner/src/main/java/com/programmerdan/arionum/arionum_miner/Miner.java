@@ -48,6 +48,8 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Random;
 import java.util.Base64.Encoder;
+import java.util.Collection;
+import java.util.Enumeration;
 import java.util.LinkedList;
 import java.util.Scanner;
 import java.util.TreeSet;
@@ -103,6 +105,7 @@ public class Miner implements UncaughtExceptionHandler {
 	private final AtomicLong deadWorkers;
 	private final ConcurrentLinkedDeque<Report> deadWorkerSummaries;
 	private final ConcurrentHashMap<String, Long> deadWorkerLives;
+	protected ConcurrentHashMap<String, long[]> blockEffortDistributionMap;
 	
 	/**
 	 * One or more hashing threads.
@@ -462,6 +465,7 @@ public class Miner implements UncaughtExceptionHandler {
 		this.deadWorkerSociety = new ConcurrentLinkedQueue<>();
 		this.deadWorkers = new AtomicLong(0l);
 		this.deadWorkerLives = new ConcurrentHashMap<String, Long>();
+		this.blockEffortDistributionMap = new ConcurrentHashMap<>();
 
 		this.blockFinds = new AtomicLong();
 		this.blockShares = new AtomicLong();
@@ -700,6 +704,51 @@ public class Miner implements UncaughtExceptionHandler {
 						JSONObject jsonData = (JSONObject) obj.get("data");
 						String localData = (String) jsonData.get("block");
 						if (!localData.equals(data)) {
+							try {
+								synchronized(blockEffortDistributionMap) {
+									int q = blockEffortDistributionMap.size();
+									Enumeration<String> keys = blockEffortDistributionMap.keys();
+									String key = null;
+									for (int j = 0; j < q; j++) {
+										key = keys.nextElement();
+										long[] value = blockEffortDistributionMap.get(key);
+										long max = 0;
+										for (int i = 0; i < value.length; i++) {
+											if (value[i] > max) max = value[i];
+										}
+										//System.out.print(key + "] " + max + " [");
+										coPrint.updateMsg().fp("%10s", key).fp("] %12d [", max).clr();
+										for (int i = 0; i < value.length; i++) {
+											int v = (int) Math.ceil( (double)(value[i] * 10l) / (double) max);
+											switch (v) {
+											case 10: coPrint.a(Attribute.NONE).f(FColor.WHITE); break;
+											case 9: coPrint.a(Attribute.DARK).f(FColor.WHITE); break;
+											case 8: coPrint.a(Attribute.LIGHT).f(FColor.BLACK); break;
+											case 7: coPrint.a(Attribute.LIGHT).f(FColor.GREEN); break;
+											case 6: coPrint.a(Attribute.NONE).f(FColor.GREEN); break;
+											case 5: coPrint.a(Attribute.DARK).f(FColor.GREEN); break;
+											case 4: coPrint.a(Attribute.DARK).f(FColor.YELLOW); break;
+											case 3: coPrint.a(Attribute.NONE).f(FColor.YELLOW); break;
+											case 2: coPrint.a(Attribute.LIGHT).f(FColor.YELLOW); break;
+											case 1: coPrint.a(Attribute.LIGHT).f(FColor.RED); break;
+											case 0: coPrint.a(Attribute.DARK).f(FColor.RED); break;
+											}
+											if (v >= 10) {
+												//System.out.print("M");
+												coPrint.p("M").clr();
+											} else {
+												//System.out.print(v);
+												coPrint.p(v).clr();
+											}
+											
+										}
+										//System.out.println();
+										coPrint.ln().clr();
+									}
+								}
+							} catch (Exception e) {
+								System.err.println("Failed printing distributions");
+							}
 							coPrint.updateLabel().p("Update transitioned to new block. ").clr();
 							if (lastBlockUpdate > 0) {
 								coPrint.updateMsg().p("  Last block took: ")
@@ -831,10 +880,10 @@ public class Miner implements UncaughtExceptionHandler {
 			if (!AdvMode.auto.equals(this.hasherMode) && this.hasherCount.get() < maxHashers) {
 				String workerId = this.deadWorkers.getAndIncrement() + "]" + php_uniqid();
 				this.deadWorkerLives.put(workerId, System.currentTimeMillis());
-				Hasher hasher = HasherFactory.createHasher(hasherMode, this, workerId, this.hashesPerSession, (long) this.sessionLength * 2l);
+				Hasher hasher = HasherFactory.createHasher(this.hasherCount.get() % 2 == 1 ? AdvMode.experimental : hasherMode, this, workerId, this.hashesPerSession, (long) this.sessionLength * 2l);
 				updateWorker(hasher);
-				this.hashers.submit(hasher);
 				addWorker(workerId, hasher);
+				this.hashers.submit(hasher);
 			} else if (AdvMode.auto.equals(this.hasherMode)) { // auto adjust!
 				Profile newActiveProfile = activeProfile;
 
@@ -926,6 +975,10 @@ public class Miner implements UncaughtExceptionHandler {
 	 * @param workerId
 	 */
 	protected void workerInit(final String workerId) {
+		Hasher hasher = workers.get(workerId);
+		if (hasher != null) {
+			this.blockEffortDistributionMap.computeIfAbsent(hasher.getType(), (h) -> {return new long[50];});
+		}
 	}
 
 	/**
@@ -936,6 +989,18 @@ public class Miner implements UncaughtExceptionHandler {
 	 */
 	protected void workerFinish(HasherStats stats, Hasher worker) {
 		this.deadWorkerSociety.offer(stats);
+		if (stats.data != null && stats.data instanceof long[]) {
+			this.blockEffortDistributionMap.compute(worker.getType(), (id, values) -> {
+				if (values != null) {
+					for (int i = 0; i < values.length; i++) {
+						values[i] += ((long[])stats.data)[i];
+					}
+					return values;
+				} else {
+					return (long[]) stats.data;
+				}
+			});
+		}
 		releaseWorker(worker.getID());
 		try {
 			stats.scheduledTime = System.currentTimeMillis() - this.deadWorkerLives.remove(stats.id);
@@ -960,6 +1025,18 @@ public class Miner implements UncaughtExceptionHandler {
 	 */
 	protected long[] sessionFinish(HasherStats stats, Hasher worker) {
 		this.deadWorkerSociety.offer(stats);
+		if (stats.data != null && stats.data instanceof long[]) {
+			this.blockEffortDistributionMap.compute(worker.getType(), (id, values) -> {
+				if (values != null) {
+					for (int i = 0; i < values.length; i++) {
+						values[i] += ((long[])stats.data)[i];
+					}
+					return values;
+				} else {
+					return (long[]) stats.data;
+				}
+			});
+		}
 		try {
 			stats.scheduledTime = System.currentTimeMillis() - this.deadWorkerLives.put(stats.id, System.currentTimeMillis());
 		} catch (NullPointerException npe) {
@@ -1057,7 +1134,7 @@ public class Miner implements UncaughtExceptionHandler {
 					/* reporting stats */
 					if (this.statsHost != null) {
 						HasherStats contrib = this.statsStage.computeIfAbsent(worker.type, w -> 
-								{ return new HasherStats(this.worker, 0, 0, 0, System.currentTimeMillis(), 0, 0, 0, 0, w); });
+								{ return new HasherStats(this.worker, 0, 0, 0, System.currentTimeMillis(), 0, 0, 0, 0, w, null); });
 						
 						contrib.hashes += allHashes;
 						

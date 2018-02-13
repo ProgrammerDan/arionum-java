@@ -34,29 +34,54 @@ import java.util.Base64;
 import java.util.Base64.Encoder;
 import java.util.Random;
 import java.util.BitSet;
+import java.util.LinkedList;
+
+import com.sun.jna.Memory;
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.PointerByReference;
 
 import net.openhft.affinity.Affinity;
 import net.openhft.affinity.AffinityLock;
+import net.openhft.affinity.AffinitySupport;
 
 import com.programmerdan.arionum.arionum_miner.jna.*;
 
 /**
- * The intent for this hasher is deeper self-inspection of running times of various components. It can be used as a testbed for comparative performance. It is not meant to be used for general use
- *
- * This particular experimental hasher takes advantage of an observation: namely, that we're doing double the randomness minimally necessary for the scheme, since the argon2i implementation here and in the php reference internally salts the
- * "password" with 32 bytes of random data. So the nonce itself can be considered just a payload, fixed entity, and allow the salting of the argon2i to control uniformly random generation of SHA-512 DL outcomes.
- * 
- * This gives me 5-10% H/s speedups on isolated testing with no increase in rejections. Block finds and shares remain as expected for H/s observed.
- * 
- * Another indicator of improved performance is tracking reveals 99.97% of time is spent in argon2i codepath, vs. between 99.8 and 99.9% for other cores. This might sound small but adds up in a big way over time, as its a per-hash
- * improvement.
- * 
- * Once a nonce is submitted, it is discarded and a new one generated, as the pool does not allow resubmission of prior nonces.
+ * This function means serious business.
+ * With the Hard Fork in Arionum increasing by nearly two orders of magnitude the per-hash memory requirements, 
+ * the allocation of memory became a serious performance bottleneck for most normal CPU miners.
+ * This hasher attempts to address that, by generating a pool of massive memory "blocks" that are passed
+ * to the argon2 function and reused. It is conservative, keeping a static "scratch" pool of available memory
+ * blocks and passing them to new Hashers as needed, who (should) return them to the scratch pool when they are
+ * done. New memory blocks are only allocated if the scratch pool is exhausted, but then again, those new
+ * blocks are then preserved within the pool.
+ * Initial testing showed about 25% performance gain by removing the bulk of memory alloc and dealloc calls in this
+ * fashion.
  * 
  * @author ProgrammerDan (Daniel Boston)
  *
  */
-public class ExperimentalHasher extends Hasher {
+public class DistributionHasher extends Hasher implements Argon2Library.AllocateFunction, Argon2Library.DeallocateFunction {
+	/* Scratch "pool" of massive memory pages. */
+	private static LinkedList<Memory> scratches = new LinkedList<>();
+	private static Memory getScratch() {
+		Memory mem = scratches.poll();
+		if (mem == null) {
+			return new Memory(524288l*1024l);
+		} else {
+			return mem;
+		}
+	}
+	private static void returnScratch(Memory mem) {
+		scratches.push(mem);
+	}
+	
+	private long[] dlClass = new long[50];
+
+	/*Local Hasher vars*/
+	private Memory scratch = null;
+
+	private final Argon2_Context context;
 
 	private final JnaUint32 iterations = new JnaUint32(1);
 	private final JnaUint32 memory = new JnaUint32(524288);
@@ -70,11 +95,28 @@ public class ExperimentalHasher extends Hasher {
 	private final Argon2Library argonlib;
 	private final Argon2_type argonType = new Argon2_type(1l);
 
-	public ExperimentalHasher(Miner parent, String id, long target, long maxTime) {
+	public DistributionHasher(Miner parent, String id, long target, long maxTime) {
 		super(parent, id, target, maxTime);
 
 		// SET UP ARGON FOR DIRECT-TO-JNA-WRAPPER-EXEC
 		argonlib = Argon2Library.INSTANCE;
+		context  = new Argon2_Context();
+		context.outlen = new JnaUint32(32);
+		context.out = new Memory(32l);
+		// assigned per hash context.pwdLen 
+		context.saltlen = new JnaUint32(16);
+		context.secret = null;
+		context.secretlen = new JnaUint32(0);
+		context.ad = null;
+		context.adlen = new JnaUint32(0);
+
+		context.t_cost = iterations;
+		context.m_cost = memory;
+		context.lanes = parallelism;
+		context.threads = parallelism;
+		context.flags = Argon2Library.ARGON2_DEFAULT_FLAGS;
+		context.version = new JnaUint32(0x13);
+
 		encLen = argonlib.argon2_encodedlen(iterations, memory, parallelism, saltLenI, hashLenI,
 				argonType);
 		encoded = new byte[encLen.intValue()];
@@ -86,8 +128,10 @@ public class ExperimentalHasher extends Hasher {
 	private String rawHashBase;
 	private byte[] nonce = new byte[32];
 	private byte[] salt = new byte[16];
+	private Memory m_salt = new Memory(16l);
 	private String rawNonce;
 	private byte[] hashBaseBuffer;
+	private Memory m_hashBaseBuffer;
 	private Size_t hashBaseBufferSize;
 	private byte[] fullHashBaseBuffer;
 
@@ -104,7 +148,7 @@ public class ExperimentalHasher extends Hasher {
 	}
 
 	private void genNonce() {
-		insRandom = new Random(random.nextLong());
+		//insRandom = new Random(random.nextLong());
 		String encNonce = null;
 		StringBuilder hashBase;
 		random.nextBytes(nonce);
@@ -132,13 +176,19 @@ public class ExperimentalHasher extends Hasher {
 
 		hashBaseBuffer = rawHashBase.getBytes();
 		hashBaseBufferSize = new Size_t(hashBaseBuffer.length);
+		m_hashBaseBuffer = new Memory(hashBaseBuffer.length);
 		fullHashBaseBuffer = new byte[hashBaseBuffer.length + encLen.intValue()];
 
+		m_hashBaseBuffer.write(0, hashBaseBuffer, 0, hashBaseBuffer.length);
 		System.arraycopy(hashBaseBuffer, 0, fullHashBaseBuffer, 0, hashBaseBuffer.length);
 	}
 
 	@Override
 	public void go() {
+		scratch = DistributionHasher.getScratch();
+		context.allocate_cbk = this;
+		context.free_cbk = this;
+
 		boolean doLoop = true;
 		this.hashBegin = System.currentTimeMillis();
 
@@ -171,19 +221,40 @@ public class ExperimentalHasher extends Hasher {
 			boolean bound = true;
 			BitSet affinity = Affinity.getAffinity();
 			if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
-				bound = false;
+				Integer lastChance = AggressiveAffinityThreadFactory.AffineMap.get(Affinity.getThreadId());
+				if (lastChance == null || lastChance < 0) {
+					//System.err.println("Unbound.");
+					bound = false;
+				}
 			}
 			while (doLoop && active) {
 				statCycle = System.currentTimeMillis();
 				statBegin = System.nanoTime();
 				try {
-					insRandom.nextBytes(salt); // 47 ns
+					//insRandom.nextBytes(salt); // 47 ns
+					random.nextBytes(salt);
+					m_salt.write(0, salt, 0, 16);
 	
 					statArgonBegin = System.nanoTime();
 	
-					argonlib.argon2i_hash_encoded(iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize, salt,
-							saltLen, hashLen, encoded, encLen); // refactor saves like 30,000-200,000 ns per hash // 34.2 ms
-																// -- 34,200,000 ns
+											// -- 34,200,000 ns
+					// set argon params in context..
+					context.out = new Memory(32l);//new byte[32];
+					context.salt = m_salt;
+					context.pwdlen = new JnaUint32(hashBaseBuffer.length);
+					m_hashBaseBuffer.write(0, hashBaseBuffer, 0, hashBaseBuffer.length);
+					context.pwd = m_hashBaseBuffer;
+					int res = argonlib.argon2_ctx(context, argonType);
+					if (res != Argon2Library.ARGON2_OK) {
+						System.out.println("HASH FAILURE!" + res);
+						System.out.println(" hashes: " + hashCount);
+						System.exit(res);
+					}
+					int res2 = argonlib.encode_ctx(encoded, encLen, context, argonType);
+					if (res2 != Argon2Library.ARGON2_OK) {
+						System.out.println("ENCODE FAILURE! " + res2);
+					}
+
 					statArgonEnd = System.nanoTime();
 	
 					System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue());
@@ -206,7 +277,7 @@ public class ExperimentalHasher extends Hasher {
 	
 					long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
 					// 385 ns for duration
-	
+					
 					if (finalDuration > 0 && finalDuration <= this.limit) {
 	
 						parent.submit(rawNonce, new String(encoded), finalDuration, this.difficulty.longValue(), this.getType());
@@ -215,7 +286,40 @@ public class ExperimentalHasher extends Hasher {
 						} else {
 							shares++;
 						}
-						genNonce(); // only gen a new nonce once we exhaust the one we had
+					}
+					genNonce(); // only gen a new nonce once we exhaust the one we had
+					
+					if (finalDuration <= 240) {
+						this.dlClass[0] ++;
+					} else {
+						long cap = 6250l;
+						int index = 1;
+						while (finalDuration > cap) {
+							cap = cap * 2l;
+							/*
+							 * 6250k
+							 * 12500k
+							 * 25k
+							 * 50k
+							 * 100k
+							 * 200k
+							 * 400k
+							 * 800k
+							 * 1.6m
+							 * 3.2m
+							 * 6.4m
+							 * 12.8m
+							 * 25.6m
+							 * 51.2m
+							 * 102.4m
+							 * 204.8m
+							 * 409.6m
+							 * etc
+							 */
+							index++;
+						}
+						if (index > 49) index = 49; 
+						this.dlClass[index] ++;
 					}
 	
 					hashCount++;
@@ -260,20 +364,39 @@ public class ExperimentalHasher extends Hasher {
 						this.hashEnd = System.currentTimeMillis();
 						this.hashTime = this.hashEnd - this.hashBegin;
 						this.hashBegin = System.currentTimeMillis();
-						completeSession(null);
+						completeSession(this.dlClass);
 						this.loopTime = 0l;
+						this.dlClass = new long[50];
 					}
 				}
 			}
 		} catch (Throwable e) {
 			e.printStackTrace();
 		}
+		DistributionHasher.returnScratch(scratch);
 		this.hashEnd = System.currentTimeMillis();
 		this.hashTime = this.hashEnd - this.hashBegin;
 		this.parent.hasherCount.decrementAndGet();
 	}
+
+	// allocate
+	public int invoke(PointerByReference memory, Size_t byte_to_allocate) {
+		
+		if (byte_to_allocate.intValue() > this.scratch.size()) {
+			return -22; // memory allocation error
+		}
+
+		memory.setValue(this.scratch);
+
+		return 0;
+	}
+
+	// no-op deallcate, wipe?
+	public void invoke(Pointer memory, Size_t byte_to_allocate) {
+		// we ignore this, since we manage memory on our own.
+	}
 	
 	public String getType() {
-		return "Legacy";
+		return "DEBUG";
 	}
 }
