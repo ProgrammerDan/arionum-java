@@ -35,70 +35,74 @@ import net.openhft.affinity.Affinity;
 
 public class AggressiveAffinityThreadFactory implements ThreadFactory {
 
-    /**
-     * Windows apparently allows the affine but fails to properly report the affine later...
-     */
-    public static ConcurrentHashMap<Integer, Integer> AffineMap = new ConcurrentHashMap<>();
+	/**
+	 * Windows apparently allows the affine but fails to properly report the affine later...
+	 */
+	public static ConcurrentHashMap<Integer, Integer> AffineMap = new ConcurrentHashMap<>();
 
-    private final String name;
-    private final boolean daemon;
+	private final String name;
+	private final boolean daemon;
 
-    private int id = 1;
+	private int id = 1;
 
-    public AggressiveAffinityThreadFactory(String name) {
-        this(name, true);
-    }
+	public AggressiveAffinityThreadFactory(String name) {
+		this(name, true);
+	}
 
-    public AggressiveAffinityThreadFactory(String name, boolean daemon) {
-        this.name = name;
-        this.daemon = daemon;
-    }
+	public AggressiveAffinityThreadFactory(String name, boolean daemon) {
+		this.name = name;
+		this.daemon = daemon;
+	}
 
-    @Override
-    public synchronized Thread newThread(final Runnable r) {
-    	final int myid = id;
-        String name2 = myid <= 1 ? name : (name + '-' + myid);
-        id++;
-        //System.err.println("Creating a new thread: " + name2);
-        Thread t = new Thread(new Runnable() {
+	@Override
+	public synchronized Thread newThread(final Runnable r) {
+		final int myid = id;
+		String name2 = myid <= 1 ? name : (name + '-' + myid);
+		id++;
+		// System.err.println("Creating a new thread: " + name2);
+		Thread t = new Thread(new Runnable() {
 			@Override
-            public void run() {
-                try {
-                	if (myid < AffinityLock.cpuLayout().cpus()) {
-	                	AffinityLock lock = AffinityLock.acquireLock();//false); //myid);
-	                	if (!lock.isBound()) {
-	                		lock = AffinityLock.acquireCore();
-	                	}
-	                	if (!lock.isBound()) {
-	                		lock = AffinityLock.acquireLock(myid);
-	                	}
-	                	if (!lock.isBound()) {
-	                		System.err.println("Thread " + name2 + " could not immediately reserve a core, it may experience decayed performance.");
-					AffineMap.put(Affinity.getThreadId(), -1);
-				} else {
-					System.out.println("Thread " + name2 + " affined! " + lock.cpuId() + " Thread: " + Affinity.getThreadId());
-					AffineMap.put(Affinity.getThreadId(), lock.cpuId());
-	                	}
-				//System.out.println("Thread " + name2 + " affinity: " + lock.toString() + " bound " + lock.isBound() + " allocated " + lock.isAllocated());
-	                	
-	                    r.run();
-	                    
-	                    lock.close();
-                	} else {
-                		System.err.println("Thread " + name2 + " could not immediately reserve a core, as there are no more cores to assign to. If performance is degraded, attempt with fewer hashers.");
+			public void run() {
+				try {
+					if (myid < AffinityLock.cpuLayout().cpus()) {
+						AffinityLock lock = AffinityLock.acquireLock();// false); //myid);
+						if (!lock.isBound()) {
+							lock = AffinityLock.acquireCore();
+						}
+						if (!lock.isBound()) {
+							lock = AffinityLock.acquireLock(myid);
+						}
+						if (!lock.isBound()) {
+							System.err.println("Not a problem, but thread " + name2
+									+ " could not immediately reserve a core, it may experience decayed performance.");
+							AffineMap.put(Affinity.getThreadId(), -1);
+						} else {
+							System.out.println("Awesome! Thread " + name2 + " affined! " + lock.cpuId() + " Thread: "
+									+ Affinity.getThreadId());
+							AffineMap.put(Affinity.getThreadId(), lock.cpuId());
+						}
+						// System.out.println("Thread " + name2 + " affinity: " + lock.toString() + " bound " + lock.isBound() + " allocated " + lock.isAllocated());
 
-				AffineMap.put(Affinity.getThreadId(), -1);
-                		
-                		r.run();
-                	}
-                }catch (Throwable e) {
-                	System.err.println("Thread " + name2 + " died with error:");
-                	e.printStackTrace();
-		}
-            }
-        }, name2);
-        t.setDaemon(daemon);
-        return t;
-}
-	
+						r.run();
+
+						lock.close();
+					} else {
+						System.err.println("Not a problem, but thread " + name2
+								+ " could not immediately reserve a core, as there are no more cores to assign to. If performance is degraded, attempt with fewer hashers.");
+
+						AffineMap.put(Affinity.getThreadId(), -1);
+
+						r.run();
+					}
+				} catch (Throwable e) {
+					System.err.println("Ouch: thread " + name2 + " died with error:");
+					e.printStackTrace();
+					System.err.println("Depending on the error, you might consider shutting this down.");
+				}
+			}
+		}, name2);
+		t.setDaemon(daemon);
+		return t;
+	}
+
 }

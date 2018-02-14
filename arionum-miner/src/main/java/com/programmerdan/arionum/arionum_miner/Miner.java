@@ -226,6 +226,7 @@ public class Miner implements UncaughtExceptionHandler {
 	/* External stats reporting */
 	private String statsHost;
 	private String statsInvoke;
+	private String statsToken;
 	private boolean post;
 	private ConcurrentHashMap<String, HasherStats> statsStage;
 	private ConcurrentLinkedQueue<HasherStats> statsReport;
@@ -312,6 +313,15 @@ public class Miner implements UncaughtExceptionHandler {
 							} else {
 								lines.add("false");
 							}
+							
+							String workerName = Miner.php_uniqid();
+							System.out.println(" Worker name to report to node? (Each worker should have a unique name, leave empty for default: " + workerName + ") ");
+							String tWorker = console.nextLine();
+							if (tWorker != null && !tWorker.trim().isEmpty()) {
+								lines.add(tWorker.trim());
+							} else {
+								lines.add(workerName);
+							}
 						} else if ("pool".equalsIgnoreCase(type)) {
 							lines.add("pool");
 
@@ -360,6 +370,16 @@ public class Miner implements UncaughtExceptionHandler {
 							} else {
 								lines.add("false");
 							}
+
+							String workerName = Miner.php_uniqid();
+							System.out.println(" Worker name to report to node? (Each worker should have a unique name, leave empty for default: " + workerName + ") ");
+							String tWorker = console.nextLine();
+							if (tWorker != null && !tWorker.trim().isEmpty()) {
+								lines.add(tWorker.trim());
+							} else {
+								lines.add(workerName);
+							}
+
 						} else if ("test".equalsIgnoreCase(type)) {
 							lines.add("test");
 							lines.add("http://aropool.com");
@@ -452,7 +472,8 @@ public class Miner implements UncaughtExceptionHandler {
 
 	public Miner(String[] args) {
 		this.hasherMode = AdvMode.standard;
-
+		this.worker = php_uniqid();
+		
 		this.updaters = Executors.newSingleThreadExecutor();
 		this.submitters = Executors.newCachedThreadPool();
 		this.hasherCount = new AtomicInteger();
@@ -480,6 +501,7 @@ public class Miner implements UncaughtExceptionHandler {
 		/* stats report */
 		this.statsHost = null;
 		this.statsInvoke= "report.php";
+		this.statsToken = php_uniqid();
 		this.post = false;
 		this.statsStage = new ConcurrentHashMap<String, HasherStats>();
 		this.statsReport = new ConcurrentLinkedQueue<HasherStats>();
@@ -521,11 +543,20 @@ public class Miner implements UncaughtExceptionHandler {
 					this.colors = Boolean.parseBoolean(args[6].trim());
 				}
 				if (args.length > 7) {
-					String[] statsReport = args[7].trim().split(" ");
+					String workerName = args[7] != null ? args[7].trim() : null;
+					if (workerName != null && !"".equals(workerName)) {
+						this.worker = workerName;
+					} // else we leave "new" name.
+				}
+				if (args.length > 8) {
+					String[] statsReport = args[8] != null ? args[8].trim().split(" ") : null;
 					if (statsReport != null && statsReport.length > 2) {
 						this.statsHost = statsReport[0];
 						this.statsInvoke = statsReport[1];
 						this.post = statsReport[2].equalsIgnoreCase("y") ? true : statsReport[2].equalsIgnoreCase("n") ? false : Boolean.parseBoolean(statsReport[2]);
+					}
+					if (statsReport != null && statsReport.length > 3) {
+						this.statsToken = statsReport[3];
 					}
 				}
 			} else if (MinerType.pool.equals(this.type)) {
@@ -537,13 +568,22 @@ public class Miner implements UncaughtExceptionHandler {
 				if (args.length > 5) {
 					this.colors = Boolean.parseBoolean(args[5].trim());
 				}
-
 				if (args.length > 6) {
-					String[] statsReport = args[6].trim().split(" ");
+					String workerName = args[6] != null ? args[6].trim() : null;
+					if (workerName != null && !"".equals(workerName)) {
+						this.worker = workerName;
+					} // else we leave "new" name.
+				}
+
+				if (args.length > 7) {
+					String[] statsReport = args[7] != null ? args[7].trim().split(" ") : null;
 					if (statsReport != null && statsReport.length > 2) {
 						this.statsHost = statsReport[0];
 						this.statsInvoke = statsReport[1];
 						this.post = statsReport[2].equalsIgnoreCase("y") ? true : statsReport[2].equalsIgnoreCase("n") ? false : Boolean.parseBoolean(statsReport[2]);
+					}
+					if (statsReport != null && statsReport.length > 3) {
+						this.statsToken = statsReport[3];
 					}
 				}
 			} else if (MinerType.test.equals(this.type)) { // internal test mode, transient benchmarking.
@@ -562,7 +602,8 @@ public class Miner implements UncaughtExceptionHandler {
 				.clr().f(FColor.CYAN).p("  private-key: ").f(FColor.GREEN).ln(this.privateKey)
 				.clr().f(FColor.CYAN).p("  hasher-count: ").f(FColor.GREEN).ln(this.maxHashers)
 				.clr().f(FColor.CYAN).p("  hasher-mode: ").f(FColor.GREEN).ln(this.hasherMode)
-				.clr().f(FColor.CYAN).p("  colors: ").f(FColor.GREEN).ln(this.colors).clr();
+				.clr().f(FColor.CYAN).p("  colors: ").f(FColor.GREEN).ln(this.colors)
+			    .clr().f(FColor.CYAN).p("  worker-name: ").f(FColor.GREEN).ln(this.worker).clr();
 			
 		} catch (Exception e) {
 			System.err.println("Invalid configuration: " + (e.getMessage()));
@@ -573,19 +614,22 @@ public class Miner implements UncaughtExceptionHandler {
 			System.err.println("  hasher-count: " + this.maxHashers);
 			System.err.println("  hasher-mode: " + this.hasherMode);
 			System.err.println("  colors: " + this.colors);
+			System.err.println("  worker-name: " + this.worker);
 			System.err.println();
 			System.err.println("Usage: ");
 			System.err.println("  java -jar arionum-miner-java.jar");
 			System.err.println(
-					"  java -jar arionum-miner-java.jar pool http://aropool.com address [#hashers] [standard] [true|false]");
+					"  java -jar arionum-miner-java.jar pool http://aropool.com address [#hashers] [standard] [true|false] [workername]");
 			System.err.println(
-					"  java -jar arionum-miner-java.jar solo node-address pubKey priKey [#hashers] [standard] [true|false]");
+					"  java -jar arionum-miner-java.jar solo node-address pubKey priKey [#hashers] [standard] [true|false] [workername]");
 			System.err.println(" where:");
 			System.err.println("   [#hashers] is # of hashers to spin up. Default 1.");
 			System.err.println(
 					"   [standard] is type of hasher to run. At present, only standard. More options will come.");
 			System.err.println(
 					"   [true|false] is if colored output is enabled.");
+			System.err.println(
+					"   [workername] is name to report to pool or node. Should be unique per worker.");
 
 			System.exit(1);
 		}
@@ -599,7 +643,6 @@ public class Miner implements UncaughtExceptionHandler {
 				new AggressiveAffinityThreadFactory("HashMasher", true));
 
 		this.limit = 240; // default
-		this.worker = php_uniqid();
 		this.wallClockBegin = System.currentTimeMillis();
 	}
 
@@ -654,7 +697,7 @@ public class Miner implements UncaughtExceptionHandler {
 						StringBuilder extra = new StringBuilder(node);
 						extra.append("/mine.php?q=info");
 						if (MinerType.pool.equals(type)) {
-							extra.append("&worker=").append(worker).append("&address=").append(privateKey)
+							extra.append("&worker=").append(URLEncoder.encode(worker, "UTF-8")).append("&address=").append(privateKey)
 									.append("&hashrate=").append(cummSpeed);
 						}
 
@@ -1163,7 +1206,8 @@ public class Miner implements UncaughtExceptionHandler {
 					try {
 						StringBuilder to = new StringBuilder(statsHost);
 						to.append("/").append(statsInvoke).append("?q=report");
-						to.append("&id=").append(latest.id).append("&type=").append(latest.type);
+						to.append("&token=").append(URLEncoder.encode(statsToken, "UTF-8"));
+						to.append("&id=").append(URLEncoder.encode(latest.id, "UTF-8")).append("&type=").append(latest.type);
 						if (!post) {
 							to.append("&hashes=").append(latest.hashes)
 								.append("&elapsed=").append(latest.hashTime);
@@ -1215,7 +1259,8 @@ public class Miner implements UncaughtExceptionHandler {
 				try {
 					StringBuilder to = new StringBuilder(statsHost);
 					to.append("/").append(statsInvoke).append("?q=discovery");
-					to.append("&id=").append(worker).append("&type=").append(type);
+					to.append("&token=").append(URLEncoder.encode(statsToken, "UTF-8"));
+					to.append("&id=").append(URLEncoder.encode(worker, "UTF-8")).append("&type=").append(type);
 					if (!post) {
 						to.append("&nonce=").append(URLEncoder.encode(nonce, "UTF-8"))
 							.append("&argon=").append(URLEncoder.encode(argon, "UTF-8"))
@@ -1388,7 +1433,7 @@ public class Miner implements UncaughtExceptionHandler {
 	 * 
 	 * @return a quasi-unique identifier.
 	 */
-	private String php_uniqid() {
+	public static String php_uniqid() {
 		double m = ((double) (System.nanoTime() / 10)) / 10000d;
 		return String.format("%8x%05x", (long) Math.floor(m), (long) ((m - Math.floor(m)) * 1000000)).trim();
 	}

@@ -184,9 +184,14 @@ public class ExperimentalHasher extends Hasher {
 	
 					statArgonBegin = System.nanoTime();
 	
-					argonlib.argon2i_hash_encoded(iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize, salt,
+					int res = argonlib.argon2i_hash_encoded(iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize, salt,
 							saltLen, hashLen, encoded, encLen); // refactor saves like 30,000-200,000 ns per hash // 34.2 ms
 																// -- 34,200,000 ns
+					if (res != Argon2Library.ARGON2_OK) {
+						System.out.println("HASH FAILURE!" + res);
+						System.out.println(" hashes: " + hashCount);
+						System.exit(res);
+					}
 					statArgonEnd = System.nanoTime();
 	
 					System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue());
