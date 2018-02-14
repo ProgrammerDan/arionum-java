@@ -1390,7 +1390,7 @@ public class Miner implements UncaughtExceptionHandler {
 	 */
 	private String php_uniqid() {
 		double m = ((double) (System.nanoTime() / 10)) / 10000d;
-		return String.format("%8x%05x", (long) Math.floor(m), (long) ((m - Math.floor(m)) * 1000000));
+		return String.format("%8x%05x", (long) Math.floor(m), (long) ((m - Math.floor(m)) * 1000000)).trim();
 	}
 
 	private String speed() {

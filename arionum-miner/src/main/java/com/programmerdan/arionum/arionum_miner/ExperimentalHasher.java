@@ -171,7 +171,10 @@ public class ExperimentalHasher extends Hasher {
 			boolean bound = true;
 			BitSet affinity = Affinity.getAffinity();
 			if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
-				bound = false;
+				Integer lastChance = AggressiveAffinityThreadFactory.AffineMap.get(Affinity.getThreadId());
+				if (lastChance == null || lastChance < 0) {
+					bound = false;
+				}
 			}
 			while (doLoop && active) {
 				statCycle = System.currentTimeMillis();

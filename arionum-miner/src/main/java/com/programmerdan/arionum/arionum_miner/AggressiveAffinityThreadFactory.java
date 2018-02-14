@@ -26,11 +26,19 @@ OR OTHER DEALINGS IN THE SOFTWARE.
  */
 package com.programmerdan.arionum.arionum_miner;
 
+import java.util.concurrent.ConcurrentHashMap;
+
 import java.util.concurrent.ThreadFactory;
 
 import net.openhft.affinity.AffinityLock;
+import net.openhft.affinity.Affinity;
 
 public class AggressiveAffinityThreadFactory implements ThreadFactory {
+
+    /**
+     * Windows apparently allows the affine but fails to properly report the affine later...
+     */
+    public static ConcurrentHashMap<Integer, Integer> AffineMap = new ConcurrentHashMap<>();
 
     private final String name;
     private final boolean daemon;
@@ -66,7 +74,10 @@ public class AggressiveAffinityThreadFactory implements ThreadFactory {
 	                	}
 	                	if (!lock.isBound()) {
 	                		System.err.println("Thread " + name2 + " could not immediately reserve a core, it may experience decayed performance.");
-					
+					AffineMap.put(Affinity.getThreadId(), -1);
+				} else {
+					System.out.println("Thread " + name2 + " affined! " + lock.cpuId() + " Thread: " + Affinity.getThreadId());
+					AffineMap.put(Affinity.getThreadId(), lock.cpuId());
 	                	}
 				//System.out.println("Thread " + name2 + " affinity: " + lock.toString() + " bound " + lock.isBound() + " allocated " + lock.isAllocated());
 	                	
@@ -75,6 +86,8 @@ public class AggressiveAffinityThreadFactory implements ThreadFactory {
 	                    lock.close();
                 	} else {
                 		System.err.println("Thread " + name2 + " could not immediately reserve a core, as there are no more cores to assign to. If performance is degraded, attempt with fewer hashers.");
+
+				AffineMap.put(Affinity.getThreadId(), -1);
                 		
                 		r.run();
                 	}
