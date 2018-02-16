@@ -59,6 +59,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -111,7 +112,9 @@ public class Miner implements UncaughtExceptionHandler {
 	protected final AtomicInteger hasherCount;
 	private final ConcurrentHashMap<String, Hasher> workers;
 	/**
-	 * Idea here is some soft profiling; hashesPerSession records how many hashes a particular worker accomplishes in a session, which starts at some initial value; then we tune it based on observed results.
+	 * Idea here is some soft profiling; hashesPerSession records how many hashes a 
+	 * particular worker accomplishes in a session, which starts at some initial value; 
+	 * then we tune it based on observed results.
 	 */
 	private long hashesPerSession = 10l;
 	private static final long MIN_HASHES_PER_SESSION = 1l;
@@ -165,7 +168,6 @@ public class Miner implements UncaughtExceptionHandler {
 	protected boolean colors = false;
 
 	/* ==== Now update / init vars ==== */
-
 	private MinerType type;
 	private AdvMode hasherMode;
 
@@ -186,6 +188,7 @@ public class Miner implements UncaughtExceptionHandler {
 	private long lastUpdate;
 	private long lastReport;
 	private int cycles;
+	private int supercycles;
 	private int skips;
 	private int failures;
 	private int updates;
@@ -677,198 +680,235 @@ public class Miner implements UncaughtExceptionHandler {
 
 		active = true;
 		this.lastUpdate = wallClockBegin;
-		boolean firstRun = true;
+		final AtomicBoolean firstRun = new AtomicBoolean(true);
 		cycles = 0;
+		supercycles = 0;
+		final AtomicBoolean sentSpeed = new AtomicBoolean(false);
 		skips = 0;
 		failures = 0;
 		updates = 0;
 		while (active) {
-			Future<Boolean> update = this.updaters.submit(new Callable<Boolean>() {
-				public Boolean call() {
-					long executionTimeTracker = System.currentTimeMillis();
-					try {
-						if (cycles > 0 && (System.currentTimeMillis() - lastUpdate) < (UPDATING_DELAY * .5)) {
-							skips++;
-							return Boolean.FALSE;
-						}
-						boolean endline = false;
-
-						String cummSpeed = speed();
-						StringBuilder extra = new StringBuilder(node);
-						extra.append("/mine.php?q=info");
-						if (MinerType.pool.equals(type)) {
-							extra.append("&worker=").append(URLEncoder.encode(worker, "UTF-8")).append("&address=").append(privateKey)
-									.append("&hashrate=").append(cummSpeed);
-						}
-
-						URL url = new URL(extra.toString());
-						HttpURLConnection con = (HttpURLConnection) url.openConnection();
-						con.setRequestMethod("GET");
-
-						// Having some weird cases on certain OSes where apparently the netstack
-						// is by default unbounded timeout, so the single thread executor is
-						// stuck forever waiting for a reply that will never come.
-						// This should address that.
-						con.setConnectTimeout(1000);
-						con.setReadTimeout(1000);
-
-						int status = con.getResponseCode();
-
-						lastUpdate = System.currentTimeMillis();
-
-						if (status != HttpURLConnection.HTTP_OK) {
-							coPrint.updateLabel().p("Update failure: ")
-								.a(Attribute.UNDERLINE).f(FColor.RED).b(BColor.NONE).ln(con.getResponseMessage()).clr();
+			boolean updateLoop = true;
+			int firstAttempts = 0;
+			while (updateLoop) {
+				Future<Boolean> update = this.updaters.submit(new Callable<Boolean>() {
+					public Boolean call() {
+						long executionTimeTracker = System.currentTimeMillis();
+						try {
+							if (cycles > 0 && (System.currentTimeMillis() - lastUpdate) < (UPDATING_DELAY * .5)) {
+								skips++;
+								return Boolean.FALSE;
+							}
+							boolean endline = false;
+	
+							String cummSpeed = speed();
+							StringBuilder extra = new StringBuilder(node);
+							extra.append("/mine.php?q=info");
+							if (MinerType.pool.equals(type)) {
+								extra.append("&worker=").append(URLEncoder.encode(worker, "UTF-8"));
+								
+								// recommend not to constantly update this either, so send in first update then not again for 10 mins.
+								if (firstRun.get() || (!sentSpeed.get() && supercycles > 15)) {
+									extra.append("&address=").append(privateKey);
+								}
+								
+								// All the frequent speed sends was placing a large UPDATE burden on the pool, so now
+								// first h/s is sent 30s after start, and every 10 mins after that. Should help.
+								if (!sentSpeed.get() && supercycles > 15) {
+									extra.append("&hashrate=").append(cummSpeed);
+									sentSpeed.set(true);
+								}
+							}
+							
+							URL url = new URL(extra.toString());
+							HttpURLConnection con = (HttpURLConnection) url.openConnection();
+							con.setRequestMethod("GET");
+	
+							// Having some weird cases on certain OSes where apparently the netstack
+							// is by default unbounded timeout, so the single thread executor is
+							// stuck forever waiting for a reply that will never come.
+							// This should address that.
+							con.setConnectTimeout(1000);
+							con.setReadTimeout(1000);
+	
+							int status = con.getResponseCode();
+	
+							lastUpdate = System.currentTimeMillis();
+	
+							if (status != HttpURLConnection.HTTP_OK) {
+								coPrint.updateLabel().p("Update failure: ")
+									.a(Attribute.UNDERLINE).f(FColor.RED).b(BColor.NONE).ln(con.getResponseMessage()).clr();
+								con.disconnect();
+								failures++;
+								updateTime(System.currentTimeMillis() - executionTimeTracker);
+								return Boolean.FALSE;
+							}
+	
+							long parseTimeTracker = System.currentTimeMillis();
+	
+							JSONObject obj = (JSONObject) (new JSONParser())
+									.parse(new InputStreamReader(con.getInputStream()));
+	
+							if (!"ok".equals((String) obj.get("status"))) {
+								coPrint.updateLabel().p("Update failure: ")
+									.a(Attribute.UNDERLINE).f(FColor.RED).b(BColor.NONE).p(obj.get(status))
+									.a(Attribute.LIGHT).f(FColor.CYAN).ln(". We will try again shortly!").clr();
+								con.disconnect();
+								failures++;
+								updateTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
+								return Boolean.FALSE;
+							}
+	
+							JSONObject jsonData = (JSONObject) obj.get("data");
+							String localData = (String) jsonData.get("block");
+							if (!localData.equals(data)) {
+								coPrint.updateLabel().p("Update transitioned to new block. ").clr();
+								if (lastBlockUpdate > 0) {
+									coPrint.updateMsg().p("  Last block took: ")
+										.normData().p( ((System.currentTimeMillis() - lastBlockUpdate) / 1000)).unitLabel().p("s ").clr();
+								}
+								data = localData;
+								lastBlockUpdate = System.currentTimeMillis();
+								long bestDLLastBlock = bestDL.getAndSet(Long.MAX_VALUE);
+								coPrint.updateLabel().p("Best DL on last block: ")
+									.dlData().p(bestDLLastBlock).unitLabel().p(" ").clr();
+	
+								endline = true;
+							}
+							BigInteger localDifficulty = new BigInteger((String) jsonData.get("difficulty"));
+							if (!localDifficulty.equals(difficulty)) {
+								coPrint.updateMsg().p("Difficulty updated to ")
+									.dlData().p(localDifficulty).unitLabel().p(". ").clr();
+								difficulty = localDifficulty;
+								endline = true;
+							}
+							long localLimit = 0;
+							if (MinerType.pool.equals(type)) {
+								localLimit = Long.parseLong(jsonData.get("limit").toString());
+								publicKey = (String) jsonData.get("public_key");
+							} else {
+								localLimit = 240;
+							}
+	
+							if (limit != localLimit) {
+								limit = localLimit;
+							}
+							
+							long localHeight = (Long) jsonData.get("height");
+							if (localHeight != height) {
+								coPrint.updateMsg().p("New Block Height: ")
+									.normData().p(localHeight).unitLabel().p(". ").clr();
+								height = localHeight;
+								endline = true;
+							}
+	
+							if (endline) {
+								updateWorkers();
+							}
+							long sinceLastReport = System.currentTimeMillis() - lastReport;
+							if (sinceLastReport > UPDATING_REPORT) {
+								lastReport = System.currentTimeMillis();
+								coPrint.ln().info().p("Node: ").textData().fs(node).p(" ")
+									.info().p("MinDL: ").dlData().fd(limit).p("  ")
+									.info().p("BestDL: ").dlData().fd(bestDL.get()).p("  ")
+									.info().p("Block Height: ").normData().fd(height).ln()
+									.p("      ").info().p("Time on Block: ").normData().fd(((System.currentTimeMillis() - lastBlockUpdate) / 1000)).unitLabel().p("s  ")
+									.info().p("Inverse Difficulty: ").dlData().fd(difficulty.longValue()).clr();
+								coPrint.ln().info().p("  Updates:   Last ").normData().fd((sinceLastReport / 1000))
+											.unitLabel().p("s").info().p(": ").normData().fd(updates)
+										.info().p("  Failed: ").normData().fd(failures+skips)
+										.info().p("  Avg Update RTT: ").normData().fd((updates > 0 ? (updateTimeAvg.get() / (updates + failures)) : 0))
+											.unitLabel().p("ms").clr();
+								coPrint.ln().info().p("  Shares:  Attempted: ").normData().fd(sessionSubmits.get())
+										.info().p("  Rejected: ").normData().fd(sessionRejects.get())
+										.info().p("  Eff: ").normData().fp("%.2f", (sessionSubmits.get() > 0 ? 100d * ((double) (sessionSubmits.get() - sessionRejects.get()) / (double)sessionSubmits.get()) : 100.0d ))
+											.unitLabel().p("%")
+										.info().p("  Avg Hash/nonce: ").normData().fd((sessionSubmits.get() > 0 ? Math.floorDiv(hashes.get(), sessionSubmits.get()) : hashes.get()))
+										.info().p("  Avg Submit RTT: ").normData().fd((sessionSubmits.get() > 0 ? submitTimeAvg.get() / (sessionSubmits.get() + sessionRejects.get()) : 0))
+											.unitLabel().p("ms").clr();
+								coPrint.ln().info().p("  Overall:  Hashes: ").normData().fd(hashes.get())
+										.info().p("  Mining Time: ").normData().fd(((System.currentTimeMillis() - wallClockBegin) / 1000l))
+											.unitLabel().p("s")
+										.info().p("  Avg Speed: ").normData().fs(avgSpeed(wallClockBegin))
+											.unitLabel().p("H/s")
+										.info().p("  Reported Speed: ").normData().fs(cummSpeed)
+											.unitLabel().p("H/s").clr();
+								printWorkerHeader();
+								
+								updateTimeAvg.set(0);
+								updateTimeMax.set(Long.MIN_VALUE);
+								updateTimeMin.set(Long.MAX_VALUE);
+								updateParseTimeAvg.set(0);
+								updateParseTimeMax.set(Long.MIN_VALUE);
+								updateParseTimeMin.set(Long.MAX_VALUE);
+								submitParseTimeAvg.set(0);
+								submitParseTimeMax.set(Long.MIN_VALUE);
+								submitParseTimeMin.set(Long.MAX_VALUE);
+								skips = 0;
+								failures = 0;
+								updates = 0;
+								endline = true;
+								clearSpeed();
+							}
 							con.disconnect();
+							updates++;
+							updateTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
+							if (endline) {
+								System.out.println();
+							}
+							if ((sinceLastReport % UPDATING_STATS) < UPDATING_DELAY && sinceLastReport < 5000000000l) {
+								printWorkerStats();
+							}
+	
+							return Boolean.TRUE;
+						} catch (IOException | ParseException e) {
+							lastUpdate = System.currentTimeMillis();
+							if (!(e instanceof SocketTimeoutException)) {
+								coPrint.updateLabel().p("Non-fatal Update failure: ").textData().p(e.getMessage()).updateMsg().ln(" We will try again in a moment.").clr();
+								//e.printStackTrace();
+							}
 							failures++;
 							updateTime(System.currentTimeMillis() - executionTimeTracker);
 							return Boolean.FALSE;
 						}
-
-						long parseTimeTracker = System.currentTimeMillis();
-
-						JSONObject obj = (JSONObject) (new JSONParser())
-								.parse(new InputStreamReader(con.getInputStream()));
-
-						if (!"ok".equals((String) obj.get("status"))) {
-							coPrint.updateLabel().p("Update failure: ")
-								.a(Attribute.UNDERLINE).f(FColor.RED).b(BColor.NONE).p(obj.get(status))
-								.a(Attribute.LIGHT).f(FColor.CYAN).ln(". We will try again shortly!").clr();
-							con.disconnect();
-							failures++;
-							updateTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
-							return Boolean.FALSE;
-						}
-
-						JSONObject jsonData = (JSONObject) obj.get("data");
-						String localData = (String) jsonData.get("block");
-						if (!localData.equals(data)) {
-							coPrint.updateLabel().p("Update transitioned to new block. ").clr();
-							if (lastBlockUpdate > 0) {
-								coPrint.updateMsg().p("  Last block took: ")
-									.normData().p( ((System.currentTimeMillis() - lastBlockUpdate) / 1000)).unitLabel().p("s ").clr();
-							}
-							data = localData;
-							lastBlockUpdate = System.currentTimeMillis();
-							long bestDLLastBlock = bestDL.getAndSet(Long.MAX_VALUE);
-							coPrint.updateLabel().p("Best DL on last block: ")
-								.dlData().p(bestDLLastBlock).unitLabel().p(" ").clr();
-
-							endline = true;
-						}
-						BigInteger localDifficulty = new BigInteger((String) jsonData.get("difficulty"));
-						if (!localDifficulty.equals(difficulty)) {
-							coPrint.updateMsg().p("Difficulty updated to ")
-								.dlData().p(localDifficulty).unitLabel().p(". ").clr();
-							difficulty = localDifficulty;
-							endline = true;
-						}
-						long localLimit = 0;
-						if (MinerType.pool.equals(type)) {
-							localLimit = Long.parseLong(jsonData.get("limit").toString());
-							publicKey = (String) jsonData.get("public_key");
+					}
+				});
+				if (firstRun.get()) { // Failures after initial are probably just temporary so we ignore them.
+					try {
+						if (update.get().booleanValue()) {
+							firstRun.set( false );
+							updateLoop = false;
 						} else {
-							localLimit = 240;
+							firstAttempts++;
 						}
-
-						if (limit != localLimit) {
-							limit = localLimit;
+					} catch (InterruptedException | ExecutionException e) {
+						coPrint.a(Attribute.BOLD).f(FColor.RED).p("Unable to successfully complete first update: ").textData().ln(e.getMessage()).clr();
+					} finally {
+						if (firstRun.get() && firstAttempts > 15) { // failure!
+							coPrint.a(Attribute.BOLD).f(FColor.RED).ln("Unable to contact node in pool, please check connection and try again.").clr();
+							active = false;
+							firstRun.set( false );
+							updateLoop = false;
+							break;
+						} else if (firstRun.get()) {
+							coPrint.a(Attribute.BOLD).f(FColor.RED).ln("Pool did not respond (attempt " + firstAttempts + " of 15). Trying again in 5 seconds.").clr();
+	
+							try {
+								Thread.sleep(5000l);
+							} catch (InterruptedException ie) {
+								active = false;
+								firstRun.set( false );
+								updateLoop = false;
+								// interruption shuts us down.
+								coPrint.a(Attribute.BOLD).f(FColor.RED).ln("Interruption detection, shutting down.").clr();
+							}
+	
 						}
-						
-						long localHeight = (Long) jsonData.get("height");
-						if (localHeight != height) {
-							coPrint.updateMsg().p("New Block Height: ")
-								.normData().p(localHeight).unitLabel().p(". ").clr();
-							height = localHeight;
-							endline = true;
-						}
-
-						if (endline) {
-							updateWorkers();
-						}
-						long sinceLastReport = System.currentTimeMillis() - lastReport;
-						if (sinceLastReport > UPDATING_REPORT) {
-							lastReport = System.currentTimeMillis();
-							coPrint.ln().info().p("Node: ").textData().fs(node).p(" ")
-								.info().p("MinDL: ").dlData().fd(limit).p("  ")
-								.info().p("BestDL: ").dlData().fd(bestDL.get()).p("  ")
-								.info().p("Block Height: ").normData().fd(height).ln()
-								.p("      ").info().p("Time on Block: ").normData().fd(((System.currentTimeMillis() - lastBlockUpdate) / 1000)).unitLabel().p("s  ")
-								.info().p("Inverse Difficulty: ").dlData().fd(difficulty.longValue()).clr();
-							coPrint.ln().info().p("  Updates:   Last ").normData().fd((sinceLastReport / 1000))
-										.unitLabel().p("s").info().p(": ").normData().fd(updates)
-									.info().p("  Failed: ").normData().fd(failures+skips)
-									.info().p("  Avg Update RTT: ").normData().fd((updates > 0 ? (updateTimeAvg.get() / (updates + failures)) : 0))
-										.unitLabel().p("ms").clr();
-							coPrint.ln().info().p("  Shares:  Attempted: ").normData().fd(sessionSubmits.get())
-									.info().p("  Rejected: ").normData().fd(sessionRejects.get())
-									.info().p("  Eff: ").normData().fp("%.2f", (sessionSubmits.get() > 0 ? 100d * ((double) (sessionSubmits.get() - sessionRejects.get()) / (double)sessionSubmits.get()) : 100.0d ))
-										.unitLabel().p("%")
-									.info().p("  Avg Hash/nonce: ").normData().fd((sessionSubmits.get() > 0 ? Math.floorDiv(hashes.get(), sessionSubmits.get()) : hashes.get()))
-									.info().p("  Avg Submit RTT: ").normData().fd((sessionSubmits.get() > 0 ? submitTimeAvg.get() / (sessionSubmits.get() + sessionRejects.get()) : 0))
-										.unitLabel().p("ms").clr();
-							coPrint.ln().info().p("  Overall:  Hashes: ").normData().fd(hashes.get())
-									.info().p("  Mining Time: ").normData().fd(((System.currentTimeMillis() - wallClockBegin) / 1000l))
-										.unitLabel().p("s")
-									.info().p("  Avg Speed: ").normData().fs(avgSpeed(wallClockBegin))
-										.unitLabel().p("H/s")
-									.info().p("  Reported Speed: ").normData().fs(cummSpeed)
-										.unitLabel().p("H/s").clr();
-							printWorkerHeader();
-							
-							updateTimeAvg.set(0);
-							updateTimeMax.set(Long.MIN_VALUE);
-							updateTimeMin.set(Long.MAX_VALUE);
-							updateParseTimeAvg.set(0);
-							updateParseTimeMax.set(Long.MIN_VALUE);
-							updateParseTimeMin.set(Long.MAX_VALUE);
-							submitParseTimeAvg.set(0);
-							submitParseTimeMax.set(Long.MIN_VALUE);
-							submitParseTimeMin.set(Long.MAX_VALUE);
-							skips = 0;
-							failures = 0;
-							updates = 0;
-							endline = true;
-							clearSpeed();
-						}
-						con.disconnect();
-						updates++;
-						updateTime(System.currentTimeMillis(), executionTimeTracker, parseTimeTracker);
-						if (endline) {
-							System.out.println();
-						}
-						if ((sinceLastReport % UPDATING_STATS) < UPDATING_DELAY && sinceLastReport < 5000000000l) {
-							printWorkerStats();
-						}
-
-						return Boolean.TRUE;
-					} catch (IOException | ParseException e) {
-						lastUpdate = System.currentTimeMillis();
-						if (!(e instanceof SocketTimeoutException)) {
-							coPrint.updateLabel().p("Non-fatal Update failure: ").textData().p(e.getMessage()).updateMsg().ln(" We will try again in a moment.").clr();
-							//e.printStackTrace();
-						}
-						failures++;
-						updateTime(System.currentTimeMillis() - executionTimeTracker);
-						return Boolean.FALSE;
 					}
+					lastWorkerReport = System.currentTimeMillis();
+				} else {
+					updateLoop = false;
 				}
-			});
-			if (firstRun) { // Failures after initial are probably just temporary so we ignore them.
-				try {
-					if (update.get().booleanValue()) {
-						firstRun = false;
-					}
-				} catch (InterruptedException | ExecutionException e) {
-					coPrint.a(Attribute.BOLD).f(FColor.RED).p("Unable to successfully complete first update: ").textData().ln(e.getMessage()).clr();
-				} finally {
-					if (firstRun) { // failure!
-						coPrint.a(Attribute.BOLD).f(FColor.RED).ln("Unable to contact node in pool, please try again in a moment.").clr();
-						active = false;
-						break;
-					}
-				}
-				lastWorkerReport = System.currentTimeMillis();
 			}
 
 			if (!AdvMode.auto.equals(this.hasherMode) && this.hasherCount.get() < maxHashers) {
@@ -919,6 +959,11 @@ public class Miner implements UncaughtExceptionHandler {
 			if (cycles == 30) {
 				cycles = 0;
 			}
+			
+			if (supercycles == 300) { // 10 minutes
+				supercycles = 0;
+				sentSpeed.set(false);
+			}
 
 			if (cycles % 2 == 0) {
 				refreshFromWorkers();
@@ -927,6 +972,7 @@ public class Miner implements UncaughtExceptionHandler {
 			updateStats();
 
 			cycles++;
+			supercycles++;
 		}
 
 		this.updaters.shutdown();
@@ -1319,7 +1365,7 @@ public class Miner implements UncaughtExceptionHandler {
 		});
 	}
 	
-	protected void submit(final String nonce, final String argon, final long submitDL, final long difficulty, final String workerType) {
+	protected void submit(final String nonce, final String argon, final long submitDL, final long difficulty, final String workerType, final long height) {
 		this.submitters.submit(new Runnable() {
 			public void run() {
 
@@ -1354,6 +1400,10 @@ public class Miner implements UncaughtExceptionHandler {
 						// address (which is prikey again?)
 						data.append(URLEncoder.encode("address", "UTF-8")).append("=")
 								.append(URLEncoder.encode(privateKey, "UTF-8"));
+						
+						// block height
+						data.append(URLEncoder.encode("height", "UTF-8")).append("=")
+								.append(height);
 
 						out.writeBytes(data.toString());
 

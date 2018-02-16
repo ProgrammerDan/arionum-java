@@ -77,11 +77,10 @@ public class AggressiveAffinityThreadFactory implements ThreadFactory {
 									+ " could not immediately reserve a core, it may experience decayed performance.");
 							AffineMap.put(Affinity.getThreadId(), -1);
 						} else {
-							System.out.println("Awesome! Thread " + name2 + " affined! " + lock.cpuId() + " Thread: "
+							System.out.println("Awesome! Thread " + name2 + " affined! CPU ID " + lock.cpuId() + " Process Thread ID "
 									+ Affinity.getThreadId());
 							AffineMap.put(Affinity.getThreadId(), lock.cpuId());
 						}
-						// System.out.println("Thread " + name2 + " affinity: " + lock.toString() + " bound " + lock.isBound() + " allocated " + lock.isAllocated());
 
 						r.run();
 

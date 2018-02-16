@@ -301,7 +301,7 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 	
 					if (finalDuration > 0 && finalDuration <= this.limit) {
 	
-						parent.submit(rawNonce, new String(encoded), finalDuration, this.difficulty.longValue(), this.getType());
+						parent.submit(rawNonce, new String(encoded), finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight);
 						if (finalDuration <= 240) {
 							finds++;
 						} else {
@@ -360,8 +360,6 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 		} catch (Throwable e) {
 			e.printStackTrace();
 		}
-		// automagic ... this.scratch.free(this.scratch.size());
-		//this.scratch.purge();
 		MappedHasher.returnScratch(scratch);
 		this.hashEnd = System.currentTimeMillis();
 		this.hashTime = this.hashEnd - this.hashBegin;

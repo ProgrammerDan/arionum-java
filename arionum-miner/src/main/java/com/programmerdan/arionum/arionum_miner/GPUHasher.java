@@ -152,7 +152,7 @@ public class GPUHasher extends Hasher {
 
 				long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
 				if (finalDuration > 0 && finalDuration <= this.limit) {
-					parent.submit(rawNonce, argon, finalDuration, this.difficulty.longValue(), this.getType());
+					parent.submit(rawNonce, argon, finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight);
 					if (finalDuration <= 240) {
 						finds++;
 					} else {
@@ -168,7 +168,6 @@ public class GPUHasher extends Hasher {
 					this.bestDL = finalDuration;
 				}
 				
-				//System.out.println("\033[1A\033[2K" + finalDuration);
 				
 				this.argonTime += statArgonEnd - statArgonBegin;
 				this.shaTime += statShaEnd - statShaBegin;

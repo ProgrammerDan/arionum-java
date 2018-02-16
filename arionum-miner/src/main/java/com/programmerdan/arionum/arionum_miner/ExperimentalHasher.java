@@ -217,7 +217,7 @@ public class ExperimentalHasher extends Hasher {
 	
 					if (finalDuration > 0 && finalDuration <= this.limit) {
 	
-						parent.submit(rawNonce, new String(encoded), finalDuration, this.difficulty.longValue(), this.getType());
+						parent.submit(rawNonce, new String(encoded), finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight);
 						if (finalDuration <= 240) {
 							finds++;
 						} else {
@@ -261,10 +261,8 @@ public class ExperimentalHasher extends Hasher {
 						}
 					}
 					if (!bound) {
-						//System.out.println("Ending worker " + this.id);
 						doLoop = false;
 					} else {
-						//System.out.println("Ending a session for worker " + this.id);
 						this.hashEnd = System.currentTimeMillis();
 						this.hashTime = this.hashEnd - this.hashBegin;
 						this.hashBegin = System.currentTimeMillis();
