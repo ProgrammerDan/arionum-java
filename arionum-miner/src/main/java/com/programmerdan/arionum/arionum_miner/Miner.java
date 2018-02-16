@@ -1399,7 +1399,7 @@ public class Miner implements UncaughtExceptionHandler {
 								.append(URLEncoder.encode(publicKey, "UTF-8")).append("&");
 						// address (which is prikey again?)
 						data.append(URLEncoder.encode("address", "UTF-8")).append("=")
-								.append(URLEncoder.encode(privateKey, "UTF-8"));
+								.append(URLEncoder.encode(privateKey, "UTF-8")).append("&");
 						
 						// block height
 						data.append(URLEncoder.encode("height", "UTF-8")).append("=")
