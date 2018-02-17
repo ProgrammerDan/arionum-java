@@ -168,14 +168,14 @@ public class ExperimentalHasher extends Hasher {
 		long statEnd = 0l;
 
 		try {
-			boolean bound = true;
+			boolean bound = false; /*true;
 			BitSet affinity = Affinity.getAffinity();
 			if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
 				Integer lastChance = AggressiveAffinityThreadFactory.AffineMap.get(Affinity.getThreadId());
 				if (lastChance == null || lastChance < 0) {
 					bound = false;
 				}
-			}
+			}*/
 			while (doLoop && active) {
 				statCycle = System.currentTimeMillis();
 				statBegin = System.nanoTime();
@@ -245,7 +245,7 @@ public class ExperimentalHasher extends Hasher {
 				this.loopTime += System.currentTimeMillis() - statCycle;
 	
 				if (this.hashCount > this.targetHashCount || this.loopTime > this.maxTime) {
-					if (!bound) { // no affinity?
+					/*if (!bound) { // no affinity?
 						// make an attempt to grab affinity.
 						AffinityLock lock = AffinityLock.acquireLock(false); //myid);
 						if (!lock.isBound()) {
@@ -259,7 +259,7 @@ public class ExperimentalHasher extends Hasher {
 						} else {
 							bound = true;
 						}
-					}
+					}*/
 					if (!bound) {
 						doLoop = false;
 					} else {

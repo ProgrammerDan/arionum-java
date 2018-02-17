@@ -64,7 +64,7 @@ public class AggressiveAffinityThreadFactory implements ThreadFactory {
 			@Override
 			public void run() {
 				try {
-					if (myid < AffinityLock.cpuLayout().cpus()) {
+					/*if (myid < AffinityLock.cpuLayout().cpus()) {
 						AffinityLock lock = AffinityLock.acquireLock();// false); //myid);
 						if (!lock.isBound()) {
 							lock = AffinityLock.acquireCore();
@@ -91,8 +91,8 @@ public class AggressiveAffinityThreadFactory implements ThreadFactory {
 
 						AffineMap.put(Affinity.getThreadId(), -1);
 
-						r.run();
-					}
+						*/r.run();/*
+					}*/
 				} catch (Throwable e) {
 					System.err.println("Ouch: thread " + name2 + " died with error:");
 					e.printStackTrace();
