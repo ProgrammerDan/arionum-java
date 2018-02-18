@@ -267,8 +267,12 @@ public class Miner implements UncaughtExceptionHandler {
 					String input = console.nextLine();
 
 					if ("y".equalsIgnoreCase(input)) {
-						System.out.print(" Choose type? (solo/pool) ");
+						String basetype = "pool";
+						System.out.print(" Choose type? (solo/pool - leave blank for default of pool) ");
 						String type = console.nextLine();
+						if (type == null || "".equals(type.trim())) {
+							type = basetype;
+						}
 						if ("solo".equalsIgnoreCase(type)) {
 							lines.add("solo");
 
@@ -596,14 +600,28 @@ public class Miner implements UncaughtExceptionHandler {
 			if (AdvMode.auto.equals(this.hasherMode)) {
 				this.maxHashers = -1;
 			}
+
+			char[] nameChar = worker.toCharArray();
+			// sanitize the worker name
+			StringBuilder nameSB = new StringBuilder(worker.length());
+			for (char ar : nameChar) {
+				if (ar >= '0' && ar <= '9' || ar >= 'a' && ar <= 'z' || ar >= 'A' && ar <= 'Z') {
+					nameSB.append(ar);
+				}
+			}
+			worker = nameSB.toString(); // sanitize...
 			
 			coPrint = new CPrint(colors);
 			coPrint.a(Attribute.BOLD).f(FColor.CYAN).ln("Active config:")
 				.clr().f(FColor.CYAN).p("  type: ").f(FColor.GREEN).ln(this.type)
-				.clr().f(FColor.CYAN).p("  node: ").f(FColor.GREEN).ln(this.node)
-				.clr().f(FColor.CYAN).p("  public-key: ").f(FColor.GREEN).ln(this.publicKey)
-				.clr().f(FColor.CYAN).p("  private-key: ").f(FColor.GREEN).ln(this.privateKey)
-				.clr().f(FColor.CYAN).p("  hasher-count: ").f(FColor.GREEN).ln(this.maxHashers)
+				.clr().f(FColor.CYAN).p("  node: ").f(FColor.GREEN).ln(this.node);
+			if (MinerType.pool.equals(this.type)) {
+				coPrint.clr().f(FColor.CYAN).p("  wallet address: ").f(FColor.GREEN).ln(this.publicKey);
+			} else {
+				coPrint.clr().f(FColor.CYAN).p("  public-key: ").f(FColor.GREEN).ln(this.publicKey)
+					.clr().f(FColor.CYAN).p("  private-key: ").f(FColor.GREEN).ln(this.privateKey);
+			}
+			coPrint.clr().f(FColor.CYAN).p("  hasher-count: ").f(FColor.GREEN).ln(this.maxHashers)
 				.clr().f(FColor.CYAN).p("  hasher-mode: ").f(FColor.GREEN).ln(this.hasherMode)
 				.clr().f(FColor.CYAN).p("  colors: ").f(FColor.GREEN).ln(this.colors)
 			    .clr().f(FColor.CYAN).p("  worker-name: ").f(FColor.GREEN).ln(this.worker).clr();
@@ -1364,8 +1382,50 @@ public class Miner implements UncaughtExceptionHandler {
 			}
 		});
 	}
+
+	protected void reportFailure(final String packet) {
+		this.stats.submit( new Runnable() {
+			public void run() {
+				try {
+					StringBuilder to = new StringBuilder(statsHost);
+					to.append("/").append("reporterr.php");
+					to.append("&token=").append(URLEncoder.encode(statsToken, "UTF-8"));
+					to.append("&id=").append(URLEncoder.encode(worker, "UTF-8")).append("&type=").append(type);
+					
+					URL url = new URL(to.toString());
+					HttpURLConnection con = (HttpURLConnection) url.openConnection();
+
+					con.setRequestMethod("POST");
+					con.setRequestProperty("Content-type", "application/x-www-form-urlencoded");
+					con.setDoOutput(true);
+					DataOutputStream out = new DataOutputStream(con.getOutputStream());
+
+					StringBuilder data = new StringBuilder();
+
+					data.append(packet);
+					out.writeBytes(data.toString());
+						
+					out.flush();
+					out.close();
+				
+					int status = con.getResponseCode();
+					if (status != HttpURLConnection.HTTP_OK) {
+						// quietly fail..?
+						System.err.println("Failed to report error: " + status);
+					}
+				} catch (IOException ioe) {
+					// quietly fail.
+					System.err.println("Failed to report error: " + ioe.getMessage());
+				}
+			}
+		});
+	}
+
 	
 	protected void submit(final String nonce, final String argon, final long submitDL, final long difficulty, final String workerType, final long height) {
+		final String sDiff = getDifficulty().toString();
+		final String sBlockId = getBlockData();
+		
 		this.submitters.submit(new Runnable() {
 			public void run() {
 
@@ -1382,12 +1442,14 @@ public class Miner implements UncaughtExceptionHandler {
 						con.setRequestProperty("Content-type", "application/x-www-form-urlencoded");
 						con.setDoOutput(true);
 						DataOutputStream out = new DataOutputStream(con.getOutputStream());
+						
+						String sentArgon = argon.substring(30).trim();
 
 						StringBuilder data = new StringBuilder();
 
 						// argon, just the hash bit since params are universal
 						data.append(URLEncoder.encode("argon", "UTF-8")).append("=")
-								.append(URLEncoder.encode(argon.substring(30), "UTF-8")).append("&");
+								.append(URLEncoder.encode(sentArgon, "UTF-8")).append("&");
 						// nonce
 						data.append(URLEncoder.encode("nonce", "UTF-8")).append("=")
 								.append(URLEncoder.encode(nonce, "UTF-8")).append("&");
@@ -1410,7 +1472,7 @@ public class Miner implements UncaughtExceptionHandler {
 						coPrint.updateLabel().a(Attribute.LIGHT).p("Submitting to ").textData().fs(node).p(" ")
 							.updateLabel().a(Attribute.LIGHT).p(" a ").dlData().p(submitDL)
 							.updateLabel().a(Attribute.LIGHT).ln(" DL nonce.").p("  nonce: ").textData().p(nonce)
-							.updateLabel().a(Attribute.LIGHT).p(" argon: ").textData().ln(argon.substring(30)).clr();
+							.updateLabel().a(Attribute.LIGHT).p(" argon: ").textData().ln(sentArgon).clr();
 
 						out.flush();
 						out.close();
@@ -1441,6 +1503,46 @@ public class Miner implements UncaughtExceptionHandler {
 								System.out.println(" Raw Failure: " + obj.toJSONString());
 								submitStats(nonce, argon, submitDL, difficulty, workerType, failures, false);
 
+								if (!"stale block".equalsIgnoreCase((String) obj.get("data"))) {
+									coPrint.updateMsg().p(" Triggering local check of submission validity: ");
+									
+									String base = publicKey + "-" + nonce + "-" + sBlockId + "-" + sDiff;
+									String argon2 = "$argon2i$v=19$m=524288,t=1,p=1" + sentArgon;
+									byte[] baseBytes = base.getBytes();
+									
+									int ret = Argon2Library.INSTANCE.argon2i_verify(argon2.getBytes(), baseBytes, new Size_t(baseBytes.length));
+									if (ret == Argon2Library.ARGON2_OK) {
+										coPrint.f(FColor.RED).ln("VALID -- please report this to AroDev: ").clr();
+										coPrint.normData().p("  password_verify(\"").textData().p(base)
+											.normData().p("\",\"").textData().p(argon2).normData().ln("\");").clr();
+										if (MinerType.pool.equals(type)) {
+											coPrint.normData().p("  _POST Data: ").textData().ln(data.toString()).clr();
+										}
+										
+									} else {
+										coPrint.f(FColor.RED).ln("INVALID -- please report this to ProgrammerDan: ").clr();
+										coPrint.normData().p("  argon2i_verify(\"").textData().p(argon2)
+											.normData().p("\",\"").textData().p(base).normData().p("\",\"")
+											.textData().p(baseBytes.length).normData().p("\") = ")
+											.dlData().ln(ret);
+										coPrint.normData().p("  urlEncoded nonce: ").textData().ln(URLEncoder.encode(nonce, "UTF-8"));
+										coPrint.normData().p("  urlEncoded argon: ").textData().ln(URLEncoder.encode(sentArgon, "UTF-8")).clr();
+										if (MinerType.pool.equals(type)) {
+											coPrint.normData().p("  _POST Data: ").textData().ln(data.toString()).clr();
+										}
+
+									}
+									
+									if (statsHost != null) {
+										reportFailure(
+												"raw=" + URLEncoder.encode(data.toString(), "UTF-8") + "&verify=" + ret + "&base=" + URLEncoder.encode(base, "UTF-8")
+													+ "&baseLen=" + baseBytes.length + "&argon=" + URLEncoder.encode(argon2, "UTF-8")
+												);
+									}
+								} else {
+									coPrint.updateMsg().ln(" Rejection due to stale block -- regretably, work during block transition.").clr();
+								}
+								
 							} else {
 								coPrint.updateLabel().a(Attribute.LIGHT).p("Submit of ").textData().p(nonce)
 									.updateLabel().a(Attribute.LIGHT).ln(" confirmed!").clr();
