@@ -1390,7 +1390,7 @@ public class Miner implements UncaughtExceptionHandler {
 				try {
 					StringBuilder to = new StringBuilder(statsHost);
 					to.append("/").append("reporterr.php");
-					to.append("&token=").append(URLEncoder.encode(statsToken, "UTF-8"));
+					to.append("?token=").append(URLEncoder.encode(statsToken, "UTF-8"));
 					to.append("&id=").append(URLEncoder.encode(worker, "UTF-8")).append("&type=").append(type);
 					
 					URL url = new URL(to.toString());
