@@ -1444,7 +1444,7 @@ public class Miner implements UncaughtExceptionHandler {
 						con.setDoOutput(true);
 						DataOutputStream out = new DataOutputStream(con.getOutputStream());
 						
-						String sentArgon = argon.substring(30).trim();
+						String sentArgon = argon.substring(30);
 
 						StringBuilder data = new StringBuilder();
 
