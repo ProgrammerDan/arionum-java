@@ -612,6 +612,7 @@ public class Miner implements UncaughtExceptionHandler {
 			worker = nameSB.toString(); // sanitize...
 			
 			coPrint = new CPrint(colors);
+			coPrint.a(Attribute.BOLD).f(FColor.CYAN).ln("Running Version 0.2.5");
 			coPrint.a(Attribute.BOLD).f(FColor.CYAN).ln("Active config:")
 				.clr().f(FColor.CYAN).p("  type: ").f(FColor.GREEN).ln(this.type)
 				.clr().f(FColor.CYAN).p("  node: ").f(FColor.GREEN).ln(this.node);
@@ -1383,7 +1384,7 @@ public class Miner implements UncaughtExceptionHandler {
 		});
 	}
 
-	protected void reportFailure(final String packet) {
+	protected void reportFailure(final String packet, final String type) {
 		this.stats.submit( new Runnable() {
 			public void run() {
 				try {
@@ -1536,7 +1537,8 @@ public class Miner implements UncaughtExceptionHandler {
 									if (statsHost != null) {
 										reportFailure(
 												"raw=" + URLEncoder.encode(data.toString(), "UTF-8") + "&verify=" + ret + "&base=" + URLEncoder.encode(base, "UTF-8")
-													+ "&baseLen=" + baseBytes.length + "&argon=" + URLEncoder.encode(argon2, "UTF-8")
+													+ "&baseLen=" + baseBytes.length + "&argon=" + URLEncoder.encode(argon2, "UTF-8"),
+												workerType
 												);
 									}
 								} else {
