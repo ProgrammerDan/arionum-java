@@ -838,7 +838,7 @@ public class Miner implements UncaughtExceptionHandler {
 										.info().p("  Failed: ").normData().fd(failures+skips)
 										.info().p("  Avg Update RTT: ").normData().fd((updates > 0 ? (updateTimeAvg.get() / (updates + failures)) : 0))
 											.unitLabel().p("ms").clr();
-								coPrint.ln().info().p("  Shares:  Attempted: ").normData().fd(sessionSubmits.get())
+								coPrint.ln().info().p("  Nonces:  Attempted: ").normData().fd(sessionSubmits.get())
 										.info().p("  Rejected: ").normData().fd(sessionRejects.get())
 										.info().p("  Eff: ").normData().fp("%.2f", (sessionSubmits.get() > 0 ? 100d * ((double) (sessionSubmits.get() - sessionRejects.get()) / (double)sessionSubmits.get()) : 100.0d ))
 											.unitLabel().p("%")
@@ -1205,8 +1205,8 @@ public class Miner implements UncaughtExceptionHandler {
 			.p(" ").headers().fp("%8s", "Cur WL%").clr()
 			.p(" ").headers().fp("%8s", "Argon %").clr()
 			.p(" ").headers().fp("%8s", "Sha %").clr()
-			.p(" ").headers().fp("%7s", "Shares").clr()
-			.p(" ").headers().fp("%5s", "Finds").clr()
+			.p(" ").headers().fp("%7s", "Nonces").clr()
+			.p(" ").headers().fp("%5s", "Blocks").clr()
 			.p(" ").headers().fp("%6s", "Reject").clr();
 	}
 		
