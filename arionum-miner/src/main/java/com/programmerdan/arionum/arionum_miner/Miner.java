@@ -157,6 +157,8 @@ public class Miner implements UncaughtExceptionHandler {
 
 	protected final AtomicLong blockShares;
 	protected final AtomicLong blockFinds;
+	protected final AtomicLong shareRejects;
+	protected final AtomicLong findRejects;
 
 	/**
 	 * Let's thread off updating. We'll just hash constantly, and offload updating like submitting.
@@ -493,6 +495,8 @@ public class Miner implements UncaughtExceptionHandler {
 
 		this.blockFinds = new AtomicLong();
 		this.blockShares = new AtomicLong();
+		this.findRejects = new AtomicLong();
+		this.shareRejects = new AtomicLong();
 
 		this.deadWorkerSummaries = new ConcurrentLinkedDeque<>();
 
@@ -1218,8 +1222,8 @@ public class Miner implements UncaughtExceptionHandler {
 		double waitEff = 0.0d;
 		double argEff = 0.0d;
 		double shaEff = 0.0d;
-		long shares = this.blockShares.get();
-		long finds = this.blockFinds.get();
+		long shares = this.blockShares.get() - this.shareRejects.get();
+		long finds = this.blockFinds.get() - this.findRejects.get();
 		long failures = this.sessionRejects.get();
 		int grabReports = (int) (15000.0 / (double) (Miner.UPDATING_DELAY * 2d));
 		if (grabReports < 3) grabReports = 3;
@@ -1496,6 +1500,12 @@ public class Miner implements UncaughtExceptionHandler {
 
 							if (!"ok".equals((String) obj.get("status"))) {
 								sessionRejects.incrementAndGet();
+								
+								if (submitDL <= 240) {
+									findRejects.incrementAndGet();
+								} else {
+									shareRejects.incrementAndGet();
+								}
 
 								coPrint.updateLabel().a(Attribute.LIGHT).p("Submit of ").textData().p(nonce).p(" ")
 									.clr().a(Attribute.BOLD).a(Attribute.UNDERLINE).f(FColor.RED).p("rejected")
