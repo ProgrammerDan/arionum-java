@@ -63,45 +63,54 @@ public class AggressiveAffinityThreadFactory implements ThreadFactory {
 		Thread t = new Thread(new Runnable() {
 			@Override
 			public void run() {
-				try {
-					if (myid < AffinityLock.cpuLayout().cpus()) {
-						AffinityLock lock = AffinityLock.acquireLock();// false); //myid);
-						if (!lock.isBound()) {
-							lock = AffinityLock.acquireCore();
-						}
-						if (!lock.isBound()) {
-							lock = AffinityLock.acquireLock(myid);
-						}
-						if (!lock.isBound()) {
-							System.err.println("Not a problem, but thread " + name2
-									+ " could not immediately reserve a core, it may experience decayed performance.");
-							AffineMap.put(Affinity.getThreadId(), -1);
+				if (Miner.PERMIT_AFINITY) {
+					try {
+						if (myid < AffinityLock.cpuLayout().cpus()) {
+							AffinityLock lock = AffinityLock.acquireLock();// false); //myid);
+							if (!lock.isBound()) {
+								lock = AffinityLock.acquireCore();
+							}
+							if (!lock.isBound()) {
+								lock = AffinityLock.acquireLock(myid);
+							}
+							if (!lock.isBound()) {
+								System.err.println("Not a problem, but thread " + name2
+										+ " could not immediately reserve a core, it may experience decayed performance.");
+								AffineMap.put(Affinity.getThreadId(), -1);
+							} else {
+								System.out.println("Awesome! Thread " + name2 + " affined! CPU ID " + lock.cpuId() + " Process Thread ID "
+										+ Affinity.getThreadId());
+								AffineMap.put(Affinity.getThreadId(), lock.cpuId());
+							}
+	
+							r.run();
+	
+							lock.close();
 						} else {
-							System.out.println("Awesome! Thread " + name2 + " affined! CPU ID " + lock.cpuId() + " Process Thread ID "
-									+ Affinity.getThreadId());
-							AffineMap.put(Affinity.getThreadId(), lock.cpuId());
+							System.err.println("Not a problem, but thread " + name2
+									+ " could not immediately reserve a core, as there are no more cores to assign to. If performance is degraded, attempt with fewer hashers.");
+	
+							AffineMap.put(Affinity.getThreadId(), -1);
+	
+							r.run();
 						}
-
-						r.run();
-
-						lock.close();
-					} else {
-						System.err.println("Not a problem, but thread " + name2
-								+ " could not immediately reserve a core, as there are no more cores to assign to. If performance is degraded, attempt with fewer hashers.");
-
-						AffineMap.put(Affinity.getThreadId(), -1);
-
-						r.run();
+					} catch (Throwable e) {
+						System.err.println("Ouch: thread " + name2 + " died with error:");
+						e.printStackTrace();
+						System.err.println("Depending on the error, you might consider shutting this down.");
+						System.err.println("For now though, we're disabling affinity.");
+						Miner.disableAffinity();
 					}
-				} catch (Throwable e) {
-					System.err.println("Ouch: thread " + name2 + " died with error:");
-					e.printStackTrace();
-					System.err.println("Depending on the error, you might consider shutting this down.");
+				}
+				
+				if (!Miner.PERMIT_AFINITY) {
+					r.run();
+					
+					System.out.println("Awesome! Thread " + name2 + " running in affinity-free mode!");
 				}
 			}
 		}, name2);
 		t.setDaemon(daemon);
 		return t;
 	}
-
 }

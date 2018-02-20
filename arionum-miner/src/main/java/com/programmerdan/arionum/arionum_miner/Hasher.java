@@ -28,8 +28,6 @@ package com.programmerdan.arionum.arionum_miner;
 
 import java.math.BigInteger;
 
-import net.openhft.affinity.AffinityLock;
-
 /**
  * Abstraction layer to allow multiple miner definitions.
  * 

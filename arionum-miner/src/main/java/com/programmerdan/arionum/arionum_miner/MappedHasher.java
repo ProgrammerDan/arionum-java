@@ -116,7 +116,7 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 
 		encLen = argonlib.argon2_encodedlen(iterations, memory, parallelism, saltLenI, hashLenI,
 				argonType);
-		encoded = new byte[encLen.intValue()];
+		encoded = new byte[encLen.intValue() - 1];
 	}
 
 	private SecureRandom random = new SecureRandom();
@@ -174,7 +174,7 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 		hashBaseBuffer = rawHashBase.getBytes();
 		hashBaseBufferSize = new Size_t(hashBaseBuffer.length);
 		m_hashBaseBuffer = new Memory(hashBaseBuffer.length);
-		fullHashBaseBuffer = new byte[hashBaseBuffer.length + encLen.intValue()];
+		fullHashBaseBuffer = new byte[hashBaseBuffer.length + encLen.intValue() - 1];
 
 		m_hashBaseBuffer.write(0, hashBaseBuffer, 0, hashBaseBuffer.length);
 		System.arraycopy(hashBaseBuffer, 0, fullHashBaseBuffer, 0, hashBaseBuffer.length);
@@ -182,7 +182,15 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 
 	@Override
 	public void go() {
-		scratch = MappedHasher.getScratch();
+		try {
+			scratch = MappedHasher.getScratch();
+		} catch (OutOfMemoryError oome) {
+			System.err.println("Please reduce the number of requested hashing workers. Your system lacks sufficient memory to run this many!");
+			System.err.println("Regrettably, this is a fatal error.");
+			oome.printStackTrace();
+			active = false;
+			System.exit(1);
+		}
 		context.allocate_cbk = this;
 		context.free_cbk = this;
 
@@ -215,30 +223,26 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 		long statEnd = 0l;
 
 		try {
-			boolean bound = true;
-			BitSet affinity = Affinity.getAffinity();
-			if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
-				Integer lastChance = AggressiveAffinityThreadFactory.AffineMap.get(Affinity.getThreadId());
-				if (lastChance == null || lastChance < 0) {
-					bound = false;
+			boolean bound = Miner.PERMIT_AFINITY;
+			if (Miner.PERMIT_AFINITY) {
+				BitSet affinity = Affinity.getAffinity();
+				if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
+					Integer lastChance = AggressiveAffinityThreadFactory.AffineMap.get(Affinity.getThreadId());
+					if (lastChance == null || lastChance < 0) {
+						bound = false;
+					}
 				}
 			}
 			while (doLoop && active) {
 				statCycle = System.currentTimeMillis();
 				statBegin = System.nanoTime();
 				try {
-					//insRandom.nextBytes(salt); // 47 ns
 					random.nextBytes(salt);
 					m_salt.write(0, salt, 0, 16);
 	
 					statArgonBegin = System.nanoTime();
-	
-					/*argonlib.argon2i_hash_encoded(iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize, salt,
-							saltLen, hashLen, encoded, encLen); // refactor saves like 30,000-200,000 ns per hash // 34.2 ms
-					*/
-											// -- 34,200,000 ns
 					// set argon params in context..
-					context.out = new Memory(32l);//new byte[32];
+					context.out = new Memory(32l);
 					context.salt = m_salt;
 					context.pwdlen = new JnaUint32(hashBaseBuffer.length);
 					m_hashBaseBuffer.write(0, hashBaseBuffer, 0, hashBaseBuffer.length);
@@ -253,32 +257,13 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 					if (res2 != Argon2Library.ARGON2_OK) {
 						System.out.println("ENCODE FAILURE! " + res2);
 					}
-					//byte[] method1 = new byte[encoded.length];
-					//System.arraycopy(encoded, 0, method1, 0, encoded.length);
-					
-					//argonlib.argon2i_hash_encoded(iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize, salt,
-					//		saltLen, hashLen, encoded, encLen); // refactor saves like 30,000-200,000 ns per hash // 34.2 ms
-
 					statArgonEnd = System.nanoTime();
-					/*if (encoded.length == method1.length) {
-						System.out.println(String.format("Verification for method \n%d vs baseline \n%d", argonlib.argon2i_verify(method1, m_hashBaseBuffer.getByteArray(0, hashBaseBuffer.length), new Size_t(hashBaseBuffer.length)), argonlib.argon2i_verify(encoded, hashBaseBuffer, new Size_t(hashBaseBuffer.length))));
-						for (int i = 0; i < encoded.length; i++) {
-							if (encoded[i] != method1[i]) {
-								System.out.println(String.format("For same salts \n%s vs \n%s and same pwd \n%s vs \n%s method 1 produced \n%s vs baseline \n%s", 
-									encoder.encodeToString(m_salt.getByteArray(0,16)), encoder.encodeToString(salt), 
-									new String(m_hashBaseBuffer.getByteArray(0, hashBaseBuffer.length)), new String(hashBaseBuffer),
-									new String(method1), new String(encoded)
-								));
-								System.exit(-1);
-							}
-						}
-						System.out.println("Hash is same");
-					} else {
-						System.out.println("Encode failure, differing lengths.");
-						System.exit(-1);
-					}*/
-	
-					System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue());
+					
+					if (encoded[encoded.length - 1] == 0) {
+						System.out.print("Encoded length failure.");
+					} 
+					
+					System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue() - 1);
 					// 10-20ns (vs. 1200ns of strings in former StableHasher)
 	
 					statShaBegin = System.nanoTime();
@@ -301,7 +286,8 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 	
 					if (finalDuration > 0 && finalDuration <= this.limit) {
 	
-						parent.submit(rawNonce, new String(encoded), finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight);
+						// why trim? the raw encoded has a trailing \x00 null char. Trim will remove it, same as we do in the arraycopy by doing encLen - 1.
+						parent.submit(rawNonce, new String(encoded).trim(), finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight);
 						if (finalDuration <= 240) {
 							finds++;
 						} else {
@@ -324,24 +310,27 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 				} catch (Exception e) {
 					System.err.println(id + "] This worker failed somehow. Killing it.");
 					e.printStackTrace();
+					System.err.println("Please report this to ProgrammerDan");
 					doLoop = false;
 				}
 				this.loopTime += System.currentTimeMillis() - statCycle;
 	
 				if (this.hashCount > this.targetHashCount || this.loopTime > this.maxTime) {
 					if (!bound) { // no affinity?
-						// make an attempt to grab affinity.
-						AffinityLock lock = AffinityLock.acquireLock(false); //myid);
-						if (!lock.isBound()) {
-							lock = AffinityLock.acquireLock();
-						}
-						if (!lock.isBound()) {
-							lock = AffinityLock.acquireCore();
-						}
-						if (!lock.isBound()) {
-							bound = false;
-						} else {
-							bound = true;
+						if (Miner.PERMIT_AFINITY) {
+							// make an attempt to grab affinity.
+							AffinityLock lock = AffinityLock.acquireLock(false); //myid);
+							if (!lock.isBound()) {
+								lock = AffinityLock.acquireLock();
+							}
+							if (!lock.isBound()) {
+								lock = AffinityLock.acquireCore();
+							}
+							if (!lock.isBound()) {
+								bound = false;
+							} else {
+								bound = true;
+							}
 						}
 					}
 					if (!bound) {

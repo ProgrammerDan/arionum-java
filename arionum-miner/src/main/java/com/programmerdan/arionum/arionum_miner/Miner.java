@@ -40,6 +40,7 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.SocketTimeoutException;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -88,6 +89,8 @@ public class Miner implements UncaughtExceptionHandler {
 	public static final long UPDATING_DELAY = 2000l;
 	public static final long UPDATING_REPORT = 45000l;
 	public static final long UPDATING_STATS = 7500l;
+
+	public static boolean PERMIT_AFINITY = true;
 	
 	private CPrint coPrint;
 	
@@ -672,6 +675,10 @@ public class Miner implements UncaughtExceptionHandler {
 		this.wallClockBegin = System.currentTimeMillis();
 	}
 
+	/**
+	 * Kicks off this whole hashing business.
+	 * 
+	 */
 	public void start() {
 		if (MinerType.test.equals(this.type)) {
 			startTest();
@@ -713,7 +720,7 @@ public class Miner implements UncaughtExceptionHandler {
 		while (active) {
 			boolean updateLoop = true;
 			int firstAttempts = 0;
-			while (updateLoop) {
+			while (updateLoop) { // this allows us to handle initial update retries and general updates.
 				Future<Boolean> update = this.updaters.submit(new Callable<Boolean>() {
 					public Boolean call() {
 						long executionTimeTracker = System.currentTimeMillis();
@@ -1080,6 +1087,7 @@ public class Miner implements UncaughtExceptionHandler {
 		}
 		return new long[]{this.hashesPerSession, (long) this.sessionLength * 2l};
 	}
+	
 	/**
 	 * Periodically we tally up reports from finished worker tasks
 	 */
@@ -1341,8 +1349,6 @@ public class Miner implements UncaughtExceptionHandler {
 						}
 					}
 
-					//System.out.println("Reporting submit: " + to.toString());
-					
 					URL url = new URL(to.toString());
 					HttpURLConnection con = (HttpURLConnection) url.openConnection();
 					if (post) {
@@ -1425,7 +1431,6 @@ public class Miner implements UncaughtExceptionHandler {
 			}
 		});
 	}
-
 	
 	protected void submit(final String nonce, final String argon, final long submitDL, final long difficulty, final String workerType, final long height) {
 		final String sDiff = getDifficulty().toString();
@@ -1518,7 +1523,7 @@ public class Miner implements UncaughtExceptionHandler {
 									coPrint.updateMsg().p(" Triggering local check of submission validity: ");
 									
 									String base = publicKey + "-" + nonce + "-" + sBlockId + "-" + sDiff;
-									String argon2 = "$argon2i$v=19$m=524288,t=1,p=1" + sentArgon;
+									String argon2 = "$argon2i$v=19$m=524288,t=1,p=1" + URLDecoder.decode(URLEncoder.encode(sentArgon, "UTF-8"), "UTF-8");
 									byte[] baseBytes = base.getBytes();
 									
 									int ret = Argon2Library.INSTANCE.argon2i_verify(argon2.getBytes(), baseBytes, new Size_t(baseBytes.length));
@@ -1724,5 +1729,9 @@ public class Miner implements UncaughtExceptionHandler {
 
 		System.err.println("\n\nThis is probably fatal, so exiting now.");
 		System.exit(1);
+	}
+	
+	public static void disableAffinity() {
+		Miner.PERMIT_AFINITY = false;
 	}
 }
