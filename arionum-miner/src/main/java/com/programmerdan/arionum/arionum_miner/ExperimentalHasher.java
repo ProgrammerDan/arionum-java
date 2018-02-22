@@ -53,6 +53,8 @@ import com.programmerdan.arionum.arionum_miner.jna.*;
  * 
  * Once a nonce is submitted, it is discarded and a new one generated, as the pool does not allow resubmission of prior nonces.
  * 
+ * This is deprecated; use MappedHasher instead.
+ * 
  * @author ProgrammerDan (Daniel Boston)
  *
  */
@@ -219,7 +221,7 @@ public class ExperimentalHasher extends Hasher {
 	
 					if (finalDuration > 0 && finalDuration <= this.limit) {
 	
-						parent.submit(rawNonce, new String(encoded), finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight);
+						parent.submit(rawNonce, new String(encoded), finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight, this);
 						if (finalDuration <= 240) {
 							finds++;
 						} else {
@@ -285,5 +287,9 @@ public class ExperimentalHasher extends Hasher {
 	
 	public String getType() {
 		return "Legacy";
+	}
+	
+	public void kill() {
+		active = false;
 	}
 }

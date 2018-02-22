@@ -57,6 +57,11 @@ public abstract class Hasher implements Runnable{
 	 * Instead of run, go -- since we now wrap run() into a catch block since our Executors don't support UncaughtExceptions in an intuitive way
 	 */
 	public abstract void go();
+	
+	/**
+	 * If some condition exists where this should die, kill it.
+	 */
+	public abstract void kill();
 
 	protected boolean active;
 	protected String id;
@@ -116,7 +121,6 @@ public abstract class Hasher implements Runnable{
 	public String getID() {
 		return this.id;
 	}
-	
 	
 	public long getBestDL() {
 		return bestDL;

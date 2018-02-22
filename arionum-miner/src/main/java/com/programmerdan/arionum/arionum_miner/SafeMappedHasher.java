@@ -32,6 +32,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Base64.Encoder;
+import java.util.Random;
 import java.util.BitSet;
 import java.util.LinkedList;
 
@@ -56,10 +57,14 @@ import com.programmerdan.arionum.arionum_miner.jna.*;
  * Initial testing showed about 25% performance gain by removing the bulk of memory alloc and dealloc calls in this
  * fashion.
  * 
+ * This version uses a PHP-esque "safe" salt, for easier verification and to avoid verification problems against the
+ * reference implementation. As a consequence of the loss of byte space (2/3 reduction possibly) in the salt, I've added
+ * in a hopefully clever NONCE rotation scheme, that will mutate the nonce along with the salt. 
+ * 
  * @author ProgrammerDan (Daniel Boston)
  *
  */
-public class MappedHasher extends Hasher implements Argon2Library.AllocateFunction, Argon2Library.DeallocateFunction {
+public class SafeMappedHasher extends Hasher implements Argon2Library.AllocateFunction, Argon2Library.DeallocateFunction {
 	/* Scratch "pool" of massive memory pages. */
 	private static LinkedList<Memory> scratches = new LinkedList<>();
 	private static Memory getScratch() {
@@ -93,7 +98,7 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 	private final Argon2Library argonlib;
 	private final Argon2_type argonType = new Argon2_type(1l);
 
-	public MappedHasher(Miner parent, String id, long target, long maxTime) {
+	public SafeMappedHasher(Miner parent, String id, long target, long maxTime) {
 		super(parent, id, target, maxTime);
 
 		// SET UP ARGON FOR DIRECT-TO-JNA-WRAPPER-EXEC
@@ -121,16 +126,24 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 	}
 
 	private SecureRandom random = new SecureRandom();
+	private Random insRandom = new Random(random.nextLong());
 	private Encoder encoder = Base64.getEncoder();
 	private String rawHashBase;
 	private byte[] nonce = new byte[32];
 	private byte[] salt = new byte[16];
 	private Memory m_salt = new Memory(16l);
 	private String rawNonce;
+	private int rawNonceOffset;
+	private int rawNonceLen = 42;
 	private byte[] hashBaseBuffer;
 	private Memory m_hashBaseBuffer;
 	private Size_t hashBaseBufferSize;
 	private byte[] fullHashBaseBuffer;
+	
+	private static final char[] safeEncode = {
+			'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z',
+			'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+			'0','1','2','3','4','5','6','7','8','9','.','/'};
 
 	@Override
 	public void update(BigInteger difficulty, String data, long limit, String publicKey, long blockHeight) {
@@ -144,30 +157,47 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 		// no-op, we are locked into 10800 > territory now
 	}
 
-	private void genNonce() {
-		String encNonce = null;
-		StringBuilder hashBase;
-		random.nextBytes(nonce);
-		encNonce = encoder.encodeToString(nonce);
-
-		char[] nonceChar = encNonce.toCharArray();
-
-		// shaves a bit off vs regex -- for this operation, about 50% savings
-		StringBuilder nonceSb = new StringBuilder(encNonce.length());
-		for (char ar : nonceChar) {
-			if (ar >= '0' && ar <= '9' || ar >= 'a' && ar <= 'z' || ar >= 'A' && ar <= 'Z') {
-				nonceSb.append(ar);
-			}
+	private byte[] safeBase64Random(int bytes) {
+		char[] buffer = new char[bytes];
+		for (int i = 0; i < bytes; i++) {
+			buffer[i] = safeEncode[random.nextInt(64)];
 		}
+		return String.valueOf(buffer).getBytes();
+	}
+
+	private byte[] safeBase64Random(byte[] buffer) {
+		for (int i = 0; i < buffer.length;) {
+			byte[] buff = Character.valueOf(safeEncode[random.nextInt(64)]).toString().getBytes();
+			buffer[i++] = buff[0];
+			if (buff.length>1) buffer[i++] = buff[1];
+			if (buff.length>2) buffer[i++] = buff[2];
+			if (buff.length>3) buffer[i++] = buff[3];
+		}
+		return buffer;
+	}
+	
+	private String safeAlphaNumericRandom(int bytes) {
+		char[] buffer = new char[bytes];
+		for (int i = 0; i < bytes; i++) {
+			buffer[i] = safeEncode[random.nextInt(62)];
+		}
+		return new String(buffer);
+	}
+
+	
+	private void genNonce() {
+		StringBuilder hashBase;
+
+		rawNonce = safeAlphaNumericRandom(rawNonceLen);
 
 		// prealloc probably saves us 10% on this op sequence
 		hashBase = new StringBuilder(hashBufferSize); // size of key + nonce + difficult + argon + data + spacers
 		hashBase.append(this.publicKey).append("-");
-		hashBase.append(nonceSb).append("-");
+		rawNonceOffset = hashBase.length();
+		hashBase.append(rawNonce).append("-");
 		hashBase.append(this.data).append("-");
 		hashBase.append(this.difficultyString);
 
-		rawNonce = nonceSb.toString();
 		rawHashBase = hashBase.toString();
 
 		hashBaseBuffer = rawHashBase.getBytes();
@@ -178,11 +208,20 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 		m_hashBaseBuffer.write(0, hashBaseBuffer, 0, hashBaseBuffer.length);
 		System.arraycopy(hashBaseBuffer, 0, fullHashBaseBuffer, 0, hashBaseBuffer.length);
 	}
-
+	
+	/* TODO: Replace nonce in-place instead of regenerating the entirety. */
+	private void regenNonce() {
+		rawNonce = safeAlphaNumericRandom(rawNonceLen);
+		byte[] rawNonceBytes = rawNonce.getBytes();
+		m_hashBaseBuffer.write(rawNonceOffset, rawNonceBytes, 0, rawNonceBytes.length);
+		System.arraycopy(rawNonceBytes, 0, hashBaseBuffer, rawNonceOffset, rawNonceBytes.length);
+		System.arraycopy(rawNonceBytes, 0, fullHashBaseBuffer, rawNonceOffset, rawNonceBytes.length);
+	}
+	
 	@Override
 	public void go() {
 		try {
-			scratch = MappedHasher.getScratch();
+			scratch = SafeMappedHasher.getScratch();
 		} catch (OutOfMemoryError oome) {
 			System.err.println("Please reduce the number of requested hashing workers. Your system lacks sufficient memory to run this many!");
 			System.err.println("Regrettably, this is a fatal error.");
@@ -236,9 +275,15 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 				statCycle = System.currentTimeMillis();
 				statBegin = System.nanoTime();
 				try {
-					random.nextBytes(salt);
+					regenNonce();
+					
+					this.safeBase64Random(salt); //random.nextBytes(salt);
 					m_salt.write(0, salt, 0, 16);
-	
+
+					/*System.out.println(String.format("%s\n%s\n%s\n", new String(hashBaseBuffer),
+							new String(fullHashBaseBuffer), encoder.encodeToString(salt)));
+					Thread.sleep(500l);*/
+					
 					statArgonBegin = System.nanoTime();
 					// set argon params in context..
 					context.out = new Memory(32l);
@@ -292,7 +337,7 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 						} else {
 							shares++;
 						}
-						genNonce(); // only gen a new nonce once we exhaust the one we had
+						//genNonce(); // only gen a new nonce once we exhaust the one we had
 					}
 	
 					hashCount++;
@@ -305,6 +350,11 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 					this.argonTime += statArgonEnd - statArgonBegin;
 					this.shaTime += statShaEnd - statShaBegin;
 					this.nonArgonTime += (statArgonBegin - statBegin) + (statEnd - statArgonEnd);
+					
+					/*System.out.print(String.format("- r%d  a%d  s%d -", 
+							(statArgonBegin - statBegin),
+							(statArgonEnd - statArgonBegin),
+							(statShaEnd - statShaBegin)));*/
 	
 				} catch (Exception e) {
 					System.err.println(id + "] This worker failed somehow. Killing it.");
@@ -352,7 +402,7 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 		if (kill) {
 			scratch.clear(); // we don't return it. Let's clear it, and let it be GC'd. The Scratch will gen a new one.
 		} else {
-			MappedHasher.returnScratch(scratch);
+			SafeMappedHasher.returnScratch(scratch);
 		}
 		this.hashEnd = System.currentTimeMillis();
 		this.hashTime = this.hashEnd - this.hashBegin;

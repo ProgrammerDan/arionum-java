@@ -1432,7 +1432,7 @@ public class Miner implements UncaughtExceptionHandler {
 		});
 	}
 	
-	protected void submit(final String nonce, final String argon, final long submitDL, final long difficulty, final String workerType, final long height) {
+	protected void submit(final String nonce, final String argon, final long submitDL, final long difficulty, final String workerType, final long height, final Hasher discover) {
 		final String sDiff = getDifficulty().toString();
 		final String sBlockId = getBlockData();
 		
@@ -1546,14 +1546,14 @@ public class Miner implements UncaughtExceptionHandler {
 										if (MinerType.pool.equals(type)) {
 											coPrint.normData().p("  _POST Data: ").textData().ln(data.toString()).clr();
 										}
-
+										
+										discover.kill(); // this kills the hasher, throws away the memory page, and starts it over.
 									}
 									
 									if (statsHost != null) {
 										reportFailure(
 												"raw=" + URLEncoder.encode(data.toString(), "UTF-8") + "&verify=" + ret + "&base=" + URLEncoder.encode(base, "UTF-8")
-													+ "&baseLen=" + baseBytes.length + "&argon=" + URLEncoder.encode(argon2, "UTF-8"),
-												workerType
+													+ "&baseLen=" + baseBytes.length + "&argon=" + URLEncoder.encode(argon2, "UTF-8"), workerType
 												);
 									}
 								} else {

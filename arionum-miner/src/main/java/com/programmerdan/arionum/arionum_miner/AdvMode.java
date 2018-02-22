@@ -35,6 +35,7 @@ package com.programmerdan.arionum.arionum_miner;
 public enum AdvMode {
 
 	standard(true),
+	enhanced(true),
 	legacy(false),
 	experimental(false),
 	basic(false),

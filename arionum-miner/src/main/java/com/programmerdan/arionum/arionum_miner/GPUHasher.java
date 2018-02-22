@@ -33,11 +33,11 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Base64.Encoder;
 
-import com.programmerdan.arionum.arionum_miner.jna.*;
+//import com.programmerdan.arionum.arionum_miner.jna.*;
 
 /**
  * Proof of concept GPU miner. Once I figure out how.
- * 
+ * Someday...
  * 
  * @author ProgrammerDan (Daniel Boston)
  *
@@ -152,7 +152,7 @@ public class GPUHasher extends Hasher {
 
 				long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
 				if (finalDuration > 0 && finalDuration <= this.limit) {
-					parent.submit(rawNonce, argon, finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight);
+					parent.submit(rawNonce, argon, finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight, this);
 					if (finalDuration <= 240) {
 						finds++;
 					} else {
@@ -189,5 +189,9 @@ public class GPUHasher extends Hasher {
 
 	public String getType() {
 		return "GPU";
+	}
+	
+	public void kill() { 
+		active = false;
 	}
 }
