@@ -26,6 +26,7 @@ OR OTHER DEALINGS IN THE SOFTWARE.
  */
 package com.programmerdan.arionum.arionum_miner;
 
+import java.lang.reflect.Method;
 import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -401,6 +402,16 @@ public class SafeMappedHasher extends Hasher implements Argon2Library.AllocateFu
 		
 		if (kill) {
 			scratch.clear(); // we don't return it. Let's clear it, and let it be GC'd. The Scratch will gen a new one.
+			try {
+				Method dispose = scratch.getClass().getDeclaredMethod("dispose");
+				dispose.setAccessible(true);
+				dispose.invoke(scratch);
+			} catch (Throwable t) {
+				System.err.println("After a potential memory failure was identified, our attempt to release this memory buffer has failed.");
+				t.printStackTrace();
+			}
+			scratch = null;
+			Memory.purge();
 		} else {
 			SafeMappedHasher.returnScratch(scratch);
 		}

@@ -70,7 +70,7 @@ import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
 import com.programmerdan.arionum.arionum_miner.jna.*;
-
+import com.sun.jna.Memory;
 import com.diogonunes.jcdp.color.api.Ansi.Attribute;
 import com.diogonunes.jcdp.color.api.Ansi.FColor;
 import com.diogonunes.jcdp.color.api.Ansi.Attribute.*;
@@ -1715,7 +1715,100 @@ public class Miner implements UncaughtExceptionHandler {
 		System.out.println("Utility Test on " + this.publicKey);
 		String refKey = this.publicKey;
 
-		// No tests at present.
+		// validation framework for error reports.
+		JnaUint32 iterations = new JnaUint32(1);
+		JnaUint32 memory = new JnaUint32(524288);
+		JnaUint32 parallelism = new JnaUint32(1);
+		JnaUint32 saltLenI = new JnaUint32(16);
+		JnaUint32 hashLenI = new JnaUint32(32);
+		Size_t saltLen = new Size_t(16l);
+		final Size_t hashLen = new Size_t(32l);
+		Argon2_type argonType = new Argon2_type(1l);
+		Argon2Library argonlib = Argon2Library.INSTANCE;
+		Size_t encLen = argonlib.argon2_encodedlen(iterations, memory, parallelism, saltLenI, hashLenI,
+				argonType);
+		byte[] encoded = new byte[encLen.intValue()];
+		/*String hashBase =  "PZ8Tyr4Nx8MHsRAGMpZmZ6TWY63dXWSCy7AEg3h9oYjeR74yj73q3gPxbxq9R3nxSSUV4KKgu1sQZu9Qj9v2q2HhT5H3LTHwW7HzAA28SjWFdzkNoovBMncD-JUdHXFcYVcIAChuZwCEAOKF8C9MFcWf6TF26dJnh5D-MtZvKY2VEbYzVJywaNJYxJb8TmFMV86Rg7Hovv5PnkrEWTYmz6B76TvrKBdCVvbFzHT4eWHhkrzY4WhxyCVo3PD-33037203" ; // put base here
+		String saltBase =  "Wmp4d0lpcUYvWVZza0hZLw" ; // put base64 salt here
+		String argon2iE =  "$argon2i$v=19$m=524288,t=1,p=1$Wmp4d0lpcUYvWVZza0hZLw$YhKKYUruDkVVdCVpFr6qJWBE4IfLNfvOvxAKvCGUcPc" ; // put expected argon2i here*/
+		/*String hashBase =  "PZ8Tyr4Nx8MHsRAGMpZmZ6TWY63dXWSCy7AEg3h9oYjeR74yj73q3gPxbxq9R3nxSSUV4KKgu1sQZu9Qj9v2q2HhT5H3LTHwW7HzAA28SjWFdzkNoovBMncD-OpcR797PK9DUEpJdSMSveFyUSdGc9BlR7YCtF5WLc-3zY6Pf5jXc1RQvHr8qYhow8YW1NYin3WS8N17HYM4wqrmtNeBQJbuFCoqHUwjodp9ZA7ycThvCHjsdQW3ffSukmV-65817790" ; // put base here
+		String saltBase =  "kORRUeHLjB3YiCEhKYuiDw" ; // put base64 salt here
+		String argon2iE =  "$argon2i$v=19$m=524288,t=1,p=1$kORRUeHLjB3YiCEhKYuiDw$uQ/unQvCQDBePyjknp8qrwOdu3XVvRzivjUE4x5Dp1M" ; // put expected argon2i here*/
+		/*String hashBase =  "PZ8Tyr4Nx8MHsRAGMpZmZ6TWY63dXWSCy7AEg3h9oYjeR74yj73q3gPxbxq9R3nxSSUV4KKgu1sQZu9Qj9v2q2HhT5H3LTHwW7HzAA28SjWFdzkNoovBMncD-IqAGeCJDeYEeAJEswJ5YBTE8RAKkaNE8kgKkkYL8oc8-4s2vXCw69f4rfobWmDgARK3SBDt1uGXYC8SpMyUpW6RrfLfn77v7vmeU8bZ79k54GEnNZtyCvWcLhgt16XxxG1qB-38578751" ; // put base here
+		String saltBase =  "DlqvSaKJvnb/Ec7aKnOoVQ" ; // put base64 salt here
+		String argon2iE =  "$argon2i$v=19$m=524288,t=1,p=1$DlqvSaKJvnb/Ec7aKnOoVQ$qCm/zbWj7oYAwkWeFTojrTTlaSxlwSmNELk4+KZ4EpY" ; // put expected argon2i here*/
+		String hashBase =  "PZ8Tyr4Nx8MHsRAGMpZmZ6TWY63dXWSCy7AEg3h9oYjeR74yj73q3gPxbxq9R3nxSSUV4KKgu1sQZu9Qj9v2q2HhT5H3LTHwW7HzAA28SjWFdzkNoovBMncD-A7tdOTOeAuvqmVtgH6YgVm83h0GWJ9vuMCYrtsE6pd-4XjCsnXntRfnskAyMST7AzzsPWCcXC7oxupE9qSMmmj7TkEyd1ZLYoonmMY57qEQqhP5uvksTh9gq8n22WpiVMoZ-24583881" ; // put base here
+		String saltBase =  "SFlCVUtSSXhac3Y5S09EVg" ; // put base64 salt here
+		String argon2iE =  "$argon2i$v=19$m=524288,t=1,p=1$SFlCVUtSSXhac3Y5S09EVg$WiGhW0/kYCNXSL3jeRxPIM+oD3Mhnm0S3PVbXUJwCzc" ; // put expected argon2i here
+		
+		
+		// now we process
+		System.out.println("Processing using Experimental Hasher method");
+		byte[] hashBaseBuffer = hashBase.getBytes();
+		Size_t hashBaseBufferSize = new Size_t(hashBaseBuffer.length);
+		byte[] salt = Base64.getDecoder().decode(saltBase);
+		
+		int res = argonlib.argon2i_hash_encoded(iterations, memory, parallelism, hashBaseBuffer, hashBaseBufferSize, salt,
+				saltLen, hashLen, encoded, encLen); // refactor saves like 30,000-200,000 ns per hash // 34.2 ms
+													// -- 34,200,000 ns
+		if (res != Argon2Library.ARGON2_OK) {
+			System.out.println("HASH FAILURE!" + res);
+		} else {
+			System.out.println("Expected Argon: " + argon2iE);
+			System.out.println("Generated Argon: " + new String(encoded));
+		}
+		
+		
+		System.out.println("Processing using Mapped Hasher method");
+		Argon2_Context context  = new Argon2_Context();
+		context.outlen = new JnaUint32(32);
+		context.out = new Memory(32l);
+		// assigned per hash context.pwdLen 
+		context.saltlen = new JnaUint32(16);
+		context.secret = null;
+		context.secretlen = new JnaUint32(0);
+		context.ad = null;
+		context.adlen = new JnaUint32(0);
+
+		context.t_cost = iterations;
+		context.m_cost = memory;
+		context.lanes = parallelism;
+		context.threads = parallelism;
+		context.flags = Argon2Library.ARGON2_DEFAULT_FLAGS;
+		context.version = new JnaUint32(0x13);
+		
+		Memory m_salt = new Memory(16l);
+		m_salt.write(0, salt, 0, 16);
+		
+		// set argon params in context..
+		context.out = new Memory(32l);
+		context.salt = m_salt;
+		context.pwdlen = new JnaUint32(hashBaseBuffer.length);
+		Memory m_hashBaseBuffer = new Memory(hashBaseBuffer.length);
+		m_hashBaseBuffer.write(0, hashBaseBuffer, 0, hashBaseBuffer.length);
+		context.pwd = m_hashBaseBuffer;
+
+		res = argonlib.argon2_ctx(context, argonType);
+		if (res != Argon2Library.ARGON2_OK) {
+			System.out.println("HASH FAILURE!" + res);
+		}
+		
+		encoded = new byte[encLen.intValue() - 1];
+		
+		int res2 = argonlib.encode_ctx(encoded, encLen, context, argonType);
+		if (res2 != Argon2Library.ARGON2_OK) {
+			System.out.println("ENCODE FAILURE! " + res2);
+		}
+		
+		if (encoded[encoded.length - 1] == 0) {
+			System.out.println("Encoded length failure.");
+		}
+		
+		else {
+			System.out.println("Expected Argon: " + argon2iE);
+			System.out.println("Generated Argon: " + new String(encoded));
+		}
+
 		
 		System.out.println("Done static testing.");
 	}
