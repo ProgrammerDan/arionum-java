@@ -210,7 +210,7 @@ public class SafeMappedHasher extends Hasher implements Argon2Library.AllocateFu
 		System.arraycopy(hashBaseBuffer, 0, fullHashBaseBuffer, 0, hashBaseBuffer.length);
 	}
 	
-	/* TODO: Replace nonce in-place instead of regenerating the entirety. */
+	/* Replace nonce in-place instead of regenerating the entirety. */
 	private void regenNonce() {
 		rawNonce = safeAlphaNumericRandom(rawNonceLen);
 		byte[] rawNonceBytes = rawNonce.getBytes();
@@ -225,10 +225,11 @@ public class SafeMappedHasher extends Hasher implements Argon2Library.AllocateFu
 			scratch = SafeMappedHasher.getScratch();
 		} catch (OutOfMemoryError oome) {
 			System.err.println("Please reduce the number of requested hashing workers. Your system lacks sufficient memory to run this many!");
-			System.err.println("Regrettably, this is a fatal error.");
-			oome.printStackTrace();
+			//System.err.println("Regrettably, this is a fatal error.");
+			//oome.printStackTrace();
 			active = false;
-			System.exit(1);
+			//System.exit(1);
+			return;
 		}
 		context.allocate_cbk = this;
 		context.free_cbk = this;
@@ -264,11 +265,26 @@ public class SafeMappedHasher extends Hasher implements Argon2Library.AllocateFu
 		try {
 			boolean bound = Miner.PERMIT_AFINITY;
 			if (Miner.PERMIT_AFINITY) {
+				int activeCpu = Affinity.getCpu();
 				BitSet affinity = Affinity.getAffinity();
 				if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
 					Integer lastChance = AggressiveAffinityThreadFactory.AffineMap.get(Affinity.getThreadId());
 					if (lastChance == null || lastChance < 0) {
 						bound = false;
+					} else { // see if lastChance equals actual CPU binding
+						if (!lastChance.equals(activeCpu)) {
+							// try to alter!
+							AffinityLock.acquireLock(lastChance.intValue());
+							System.out.println("We had locked on to " + lastChance.intValue() + " but lost it and are running on " + activeCpu);
+						}
+					}
+				} else { // see if BitSet affinity equals actual CPU binding
+					//BigInteger singleAffine = new BigInteger(affinity.toByteArray());
+					//if (singleAffine.intValue() != activeCpu) {
+					if (affinity.nextSetBit(0) != activeCpu) {
+						// try to alter!
+						AffinityLock.acquireLock(affinity.nextSetBit(0));
+						System.out.println("We had locked on to " + affinity.nextSetBit(0) + " but lost it and are running on " + activeCpu);
 					}
 				}
 			}
@@ -362,11 +378,32 @@ public class SafeMappedHasher extends Hasher implements Argon2Library.AllocateFu
 					e.printStackTrace();
 					System.err.println("Please report this to ProgrammerDan");
 					doLoop = false;
+					kill = true;
 				}
 				this.loopTime += System.currentTimeMillis() - statCycle;
 	
 				if (this.hashCount > this.targetHashCount || this.loopTime > this.maxTime) {
-					if (!bound) { // no affinity?
+					int activeCpu = Affinity.getCpu();
+					BitSet affinity = Affinity.getAffinity();
+					if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
+						Integer lastChance = AggressiveAffinityThreadFactory.AffineMap.get(Affinity.getThreadId());
+						if (lastChance == null || lastChance < 0) {
+							bound = false;
+						} else { // see if lastChance equals actual CPU binding
+							if (!lastChance.equals(activeCpu)) {
+								// try to alter!
+								AffinityLock.acquireLock(lastChance.intValue());
+								System.out.println("We had locked on to " + lastChance.intValue() + " but lost it and are running on " + activeCpu);
+							}
+						}
+					} else { // see if BitSet affinity equals actual CPU binding
+						if (affinity.nextSetBit(0) != activeCpu) {
+							// try to alter!
+							AffinityLock.acquireLock(affinity.nextSetBit(0));
+							System.out.println("We had locked on to " + affinity.nextSetBit(0) + " but lost it and are running on " + activeCpu);
+						}
+					}
+					/*if (!bound) { // no affinity?
 						if (Miner.PERMIT_AFINITY) {
 							// make an attempt to grab affinity.
 							AffinityLock lock = AffinityLock.acquireLock(false); //myid);
@@ -385,15 +422,16 @@ public class SafeMappedHasher extends Hasher implements Argon2Library.AllocateFu
 					}
 					if (!bound) {
 						//System.out.println("Ending worker " + this.id);
-						doLoop = false;
-					} else {
+						//doLoop = false;
+						
+					} else {a*/
 						//System.out.println("Ending a session for worker " + this.id);
-						this.hashEnd = System.currentTimeMillis();
-						this.hashTime = this.hashEnd - this.hashBegin;
-						this.hashBegin = System.currentTimeMillis();
-						completeSession();
-						this.loopTime = 0l;
-					}
+					this.hashEnd = System.currentTimeMillis();
+					this.hashTime = this.hashEnd - this.hashBegin;
+					this.hashBegin = System.currentTimeMillis();
+					completeSession();
+					this.loopTime = 0l;
+					/*}*/
 				}
 			}
 		} catch (Throwable e) {

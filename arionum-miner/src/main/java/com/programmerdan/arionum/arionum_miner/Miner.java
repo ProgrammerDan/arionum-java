@@ -120,7 +120,7 @@ public class Miner implements UncaughtExceptionHandler {
 	 * then we tune it based on observed results.
 	 */
 	private long hashesPerSession = 10l;
-	private static final long MIN_HASHES_PER_SESSION = 1l;
+	private static final long MIN_HASHES_PER_SESSION = 5l;
 	/**
 	 * The session length is the target parameter generally tuned against
 	 */
