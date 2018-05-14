@@ -91,6 +91,7 @@ public class Miner implements UncaughtExceptionHandler {
 	public static final long UPDATING_STATS = 7500l;
 
 	public static boolean PERMIT_AFINITY = true;
+	public static boolean CHECK_BIND = true;
 	
 	private CPrint coPrint;
 	
@@ -706,6 +707,10 @@ public class Miner implements UncaughtExceptionHandler {
 			nextProfileSwap = System.currentTimeMillis();
 			activeProfile = null;
 			profilesTested = 0;
+		}
+
+		if (isWindows()) {
+			disableRebindCheck();
 		}
 
 		active = true;
@@ -1826,5 +1831,15 @@ public class Miner implements UncaughtExceptionHandler {
 	
 	public static void disableAffinity() {
 		Miner.PERMIT_AFINITY = false;
+	}
+
+	private static String OS = System.getProperty("os.name").toLowerCase();
+
+	public static boolean isWindows() {
+		return (OS.indexOf("win") >= 0);
+	}
+
+	public static void disableRebindCheck() {
+		Miner.CHECK_BIND = false;
 	}
 }

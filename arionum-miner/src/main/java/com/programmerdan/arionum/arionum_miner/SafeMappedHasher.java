@@ -264,7 +264,7 @@ public class SafeMappedHasher extends Hasher implements Argon2Library.AllocateFu
 
 		try {
 			boolean bound = Miner.PERMIT_AFINITY;
-			if (Miner.PERMIT_AFINITY) {
+			if (Miner.PERMIT_AFINITY && Miner.CHECK_BIND) { // for some systems, this doesn't work, so we don't check.
 				int activeCpu = Affinity.getCpu();
 				BitSet affinity = Affinity.getAffinity();
 				if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
@@ -383,55 +383,33 @@ public class SafeMappedHasher extends Hasher implements Argon2Library.AllocateFu
 				this.loopTime += System.currentTimeMillis() - statCycle;
 	
 				if (this.hashCount > this.targetHashCount || this.loopTime > this.maxTime) {
-					int activeCpu = Affinity.getCpu();
-					BitSet affinity = Affinity.getAffinity();
-					if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
-						Integer lastChance = AggressiveAffinityThreadFactory.AffineMap.get(Affinity.getThreadId());
-						if (lastChance == null || lastChance < 0) {
-							bound = false;
-						} else { // see if lastChance equals actual CPU binding
-							if (!lastChance.equals(activeCpu)) {
-								// try to alter!
-								AffinityLock.acquireLock(lastChance.intValue());
-								System.out.println("We had locked on to " + lastChance.intValue() + " but lost it and are running on " + activeCpu);
-							}
-						}
-					} else { // see if BitSet affinity equals actual CPU binding
-						if (affinity.nextSetBit(0) != activeCpu) {
-							// try to alter!
-							AffinityLock.acquireLock(affinity.nextSetBit(0));
-							System.out.println("We had locked on to " + affinity.nextSetBit(0) + " but lost it and are running on " + activeCpu);
-						}
-					}
-					/*if (!bound) { // no affinity?
-						if (Miner.PERMIT_AFINITY) {
-							// make an attempt to grab affinity.
-							AffinityLock lock = AffinityLock.acquireLock(false); //myid);
-							if (!lock.isBound()) {
-								lock = AffinityLock.acquireLock();
-							}
-							if (!lock.isBound()) {
-								lock = AffinityLock.acquireCore();
-							}
-							if (!lock.isBound()) {
+					if (Miner.PERMIT_AFINITY && Miner.CHECK_BIND) { // for some systems, this doesn't work, so we don't check.
+						int activeCpu = Affinity.getCpu();
+						BitSet affinity = Affinity.getAffinity();
+						if (affinity == null || affinity.isEmpty() || affinity.cardinality() > 1) { // no affinity?
+							Integer lastChance = AggressiveAffinityThreadFactory.AffineMap.get(Affinity.getThreadId());
+							if (lastChance == null || lastChance < 0) {
 								bound = false;
-							} else {
-								bound = true;
+							} else { // see if lastChance equals actual CPU binding
+								if (!lastChance.equals(activeCpu)) {
+									// try to alter!
+									AffinityLock.acquireLock(lastChance.intValue());
+									System.out.println("We had locked on to " + lastChance.intValue() + " but lost it and are running on " + activeCpu);
+								}
+							}
+						} else { // see if BitSet affinity equals actual CPU binding
+							if (affinity.nextSetBit(0) != activeCpu) {
+								// try to alter!
+								AffinityLock.acquireLock(affinity.nextSetBit(0));
+								System.out.println("We had locked on to " + affinity.nextSetBit(0) + " but lost it and are running on " + activeCpu);
 							}
 						}
 					}
-					if (!bound) {
-						//System.out.println("Ending worker " + this.id);
-						//doLoop = false;
-						
-					} else {a*/
-						//System.out.println("Ending a session for worker " + this.id);
 					this.hashEnd = System.currentTimeMillis();
 					this.hashTime = this.hashEnd - this.hashBegin;
 					this.hashBegin = System.currentTimeMillis();
 					completeSession();
 					this.loopTime = 0l;
-					/*}*/
 				}
 			}
 		} catch (Throwable e) {
