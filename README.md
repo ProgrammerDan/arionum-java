@@ -31,6 +31,8 @@ Major differentiators:
 
 * The hashers never stop -- the reference PHP implementation pauses the hasher during update requests and nonce submissions. The java hashers never stop.
 
-* (Very slight) optimizations -- the Java miner has easy swap support for alternate "core" types, with "basic", "debug" and "experimental" for now; basic is equivalent to php-reference, debug is chatty giving runtime details, and experimental has some improvements to improve the amount of time the hasher spends computing argon2i hashes instead of other things.
+* Optimizations -- the Java miner has easy swap support for alternate "core" types, with "standard", "experimental" and "legacy" for now; standard (or "enhanced") is the current strong recommendation, it has better adaptive behavior and some optimizations to reduce rejections, identify bad or reduced capability memory sectors and generally focus on accepted hashes, not just hashrate (although hashrate is great too). All other cores represent prior or lower performing cores.
+
+For more details, see the arionum forum thread here:  https://forum.arionum.com/viewtopic.php?f=11&t=28
 
 I hope you enjoy. See the README.md in the arionum-miner subfolder for details on compiling and running.

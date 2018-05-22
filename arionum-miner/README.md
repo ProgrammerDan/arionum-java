@@ -29,7 +29,7 @@ Get dependency:
 
     * Double click the .exe to run
 
-    * For some advanced systems, a special, optimized version is available. Check if your CPU supports AVX, AVX2, or AVX512F and use that version if supported.
+    * For some advanced systems, a special, optimized version is available. Check if your CPU supports AVX or AVX2 and use that version if supported.
 
 * Follow interactive prompt -- if a default is offered, press "enter" key to accept it. I recommend using defaults.
 
@@ -37,7 +37,7 @@ Get dependency:
 
 * Default config is `config.cfg` in the same folder as the .jar or .exe -- open it in any text editor to modify
 
-#### To compile
+#### To compile on Linux
 
 Get depencies
 
@@ -50,6 +50,12 @@ Get depencies
 Clone this repository, change directory into ```arionum-miner```
 
 Execute ```mvn clean package``` -- this will build the miner
+
+Run ```./build-argon.sh``` -- this will build the argon and run shell
+
+Launch with ```./run.sh``` -- follow interactive prompts to set up.
+
+For windows build instructions, check DOCS.md
 
 ##### Summary:
 

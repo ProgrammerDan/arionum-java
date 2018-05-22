@@ -28,9 +28,9 @@ Only use these steps if the release `.exe` doesn't work for you, otherwise, pref
 6. Start up a command prompt
 7. Navigate towards the aronium-miner directory (the one with the POM.xml file)
 8. Execute “mvn clean package” (do not used quotes)
-9. **Run the run.bat file.** Follow on screen prompts to configure your miner.
-10. **Rename the aronium-java folder** to arionum-miner to avoid conflicts with GitHub Desktop if you want to catch the latest release.
-11. Start up the bat file you just created.
+9. Run "pick-argon.bat" and follow the prompts to choose a pre-built argon2i library.
+10. **Run the run.bat file.** Follow on screen prompts to configure your miner.
+11. **Rename the aronium-java folder** to arionum-miner to avoid conflicts with GitHub Desktop if you want to catch the latest release.
 
 Need help? Contact Rezegen or ProgrammerDan for more help! 
 

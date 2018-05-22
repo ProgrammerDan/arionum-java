@@ -5,15 +5,17 @@ Extended Documentation for Java port of Arionum-miner
 
 Choose which image you want to install from the downloads below.
 
-If your hardware supports AVX, AVX2, or AVX512F and you are a Windows user, download the correctly named EXE and run. If your system does not support it, you will know on launch as it will fail noisily.
+If your hardware supports AVX or AVX2 and you are a Windows user, download the correctly named EXE and run. If your system does not support it, you will know on launch as it will fail noisily. If you know your system supports AVX512F, please contact me on Discord. All prior testing of AVX512F builds on Windows were unsuccessful, but I can work with you to see what we can accomplish. 
 
 If you see crazy high hashrates, you are using 32bit java and these programs will _not_ function. Immediately shut off miner and go here:  http://www.oracle.com/technetwork/java/javase/downloads/jre8-downloads-2133155.html and download a 64 bit jre.
 
 # Release details:
 
-* Corrected argon2i included dlls for Windows. Includes a new avx512f build for advanced systems.
+* Replaced `standard` and `enhanced` hashers with a hasher that trades a very small (0.1% or so) hashrate for significantly improved accept rate, as the method of creating salts and nonces matches the code that will verify them. In addition, improved affinity and memory handling quickly moves away from memory that results in rejected hashes; only "successful" memory is kept, and its kept for a long time.
 
-* Hot fix for off-by-one in argon submission. If rebuilding locally, follow again all steps as below.
+* Better handling in general of the differences in affinity and memory handling between Windows and Linux
+
+# General Details:
 
 * Auto-adapt to block 10800-hf-resistance to remain compliance with primary node code.
 
@@ -89,9 +91,9 @@ For pool-based mining, full command line flags:
 
 **hasher core**: Currently, one of:
 
-    `standard`: Stable, but far from php-parity. This hasher tries to squeeze even more performance out of your CPU cores. Current Default.
+    `standard`: Stable, best, most improved with best speed AND acceptance.
 
-    `experimental`:  Bleeding edge. Will likely be much faster, might have tradeoffs, no warrantees.
+    `experimental`: Less handling for affinity and memory, use standard.
 
 **colored output**: Only supported in linux, set to true to add some color to the output of the statistic updates. Note, this isn't working yet.
 
@@ -111,9 +113,9 @@ For solo mining, full command line flags:
 
 **hasher core**: Currently, one of:
 
-    `standard`: Stable, but far from php-parity. This hasher tries to squeeze even more performance out of your CPU cores. Current Default.
+    `standard`: Stable, best, most improved with best speed AND acceptance.
 
-    `experimental`:  Bleeding edge. Will likely be much faster, might have tradeoffs, no warrantees.
+    `experimental`: Less handling for affinity and memory, use standard.
 
 **colored output**: Only supported in linux, set to true to add some color to the output of the statistic updates.
 
