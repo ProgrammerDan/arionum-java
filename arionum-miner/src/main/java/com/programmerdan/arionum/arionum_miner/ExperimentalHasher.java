@@ -94,8 +94,9 @@ public class ExperimentalHasher extends Hasher {
 	private byte[] fullHashBaseBuffer;
 
 	@Override
-	public void update(BigInteger difficulty, String data, long limit, String publicKey, long blockHeight) {
-		super.update(difficulty, data, limit, publicKey, blockHeight);
+	public void update(BigInteger difficulty, String data, long limit, String publicKey, long blockHeight,
+			boolean pause, int iters, int mem, int threads) {
+		super.update(difficulty, data, limit, publicKey, blockHeight, pause, iters, mem, threads);
 
 		genNonce();
 	}

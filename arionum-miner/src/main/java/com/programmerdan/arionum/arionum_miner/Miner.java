@@ -82,6 +82,7 @@ import com.diogonunes.jcdp.color.api.Ansi.BColor.*;
  * Miner wrapper.
  * 
  * Implements hard fork 10800 -- Resistance
+ * Implements hard fork 80000 -- triforce
  */
 @SuppressWarnings({ "unused" })
 public class Miner implements UncaughtExceptionHandler {
@@ -172,6 +173,8 @@ public class Miner implements UncaughtExceptionHandler {
 	protected boolean active = false;
 
 	protected boolean colors = false;
+	
+	protected boolean pause = true;
 
 	/* ==== Now update / init vars ==== */
 	private MinerType type;
@@ -187,6 +190,10 @@ public class Miner implements UncaughtExceptionHandler {
 	private long limit;
 	private long height;
 	private long lastBlockUpdate;
+	private boolean mineRecommended;
+	private int mineIters;
+	private int mineMem;
+	private int mineThreads;
 
 	/* Update related */
 	private AtomicLong lastSpeed;
@@ -335,6 +342,15 @@ public class Miner implements UncaughtExceptionHandler {
 							} else {
 								lines.add(workerName);
 							}
+
+							// HF 80k
+							System.out.print(" Respect mining pause hints? (y/N) ");
+							lines.add(null);
+							if ("y".equalsIgnoreCase(console.nextLine())) {
+								lines.add("true");
+							} else {
+								lines.add("false");
+							}
 						} else if ("pool".equalsIgnoreCase(type)) {
 							lines.add("pool");
 
@@ -393,6 +409,14 @@ public class Miner implements UncaughtExceptionHandler {
 								lines.add(workerName);
 							}
 
+							// HF 80k
+							System.out.print(" Respect mining pause hints? (y/N) ");
+							lines.add(null);
+							if ("y".equalsIgnoreCase(console.nextLine())) {
+								lines.add("true");
+							} else {
+								lines.add("false");
+							}
 						} else if ("test".equalsIgnoreCase(type)) {
 							lines.add("test");
 							lines.add("http://aropool.com");
@@ -574,6 +598,9 @@ public class Miner implements UncaughtExceptionHandler {
 						this.statsToken = statsReport[3];
 					}
 				}
+				if (args.length > 9) {
+					this.pause = Boolean.parseBoolean(args[9].trim());
+				}
 			} else if (MinerType.pool.equals(this.type)) {
 				this.privateKey = this.publicKey;
 				this.maxHashers = args.length > 3 ? Integer.parseInt(args[3].trim()) : 1;
@@ -600,6 +627,9 @@ public class Miner implements UncaughtExceptionHandler {
 					if (statsReport != null && statsReport.length > 3) {
 						this.statsToken = statsReport[3];
 					}
+				}
+				if (args.length > 9) {
+					this.pause = Boolean.parseBoolean(args[9].trim());
 				}
 			} else if (MinerType.test.equals(this.type)) { // internal test mode, transient benchmarking.
 				this.maxHashers = args.length > 3 ? Integer.parseInt(args[3].trim()) : 1;
@@ -633,7 +663,8 @@ public class Miner implements UncaughtExceptionHandler {
 			coPrint.clr().f(FColor.CYAN).p("  hasher-count: ").f(FColor.GREEN).ln(this.maxHashers)
 				.clr().f(FColor.CYAN).p("  hasher-mode: ").f(FColor.GREEN).ln(this.hasherMode)
 				.clr().f(FColor.CYAN).p("  colors: ").f(FColor.GREEN).ln(this.colors)
-			    .clr().f(FColor.CYAN).p("  worker-name: ").f(FColor.GREEN).ln(this.worker).clr();
+			    .clr().f(FColor.CYAN).p("  worker-name: ").f(FColor.GREEN).ln(this.worker)
+			    .clr().f(FColor.CYAN).p("  pause-on-mn: ").f(FColor.GREEN).ln(this.pause).clr();
 			
 		} catch (Exception e) {
 			System.err.println("Invalid configuration: " + (e.getMessage()));
@@ -645,6 +676,7 @@ public class Miner implements UncaughtExceptionHandler {
 			System.err.println("  hasher-mode: " + this.hasherMode);
 			System.err.println("  colors: " + this.colors);
 			System.err.println("  worker-name: " + this.worker);
+			System.err.println("  pause-on-mn: " + this.pause);
 			System.err.println();
 			System.err.println("Usage: ");
 			System.err.println("  java -jar arionum-miner-java.jar");
@@ -660,6 +692,8 @@ public class Miner implements UncaughtExceptionHandler {
 					"   [true|false] is if colored output is enabled.");
 			System.err.println(
 					"   [workername] is name to report to pool or node. Should be unique per worker.");
+			System.err.println(
+					"Please note, to set pause-on-mn you need to use a config.cfg -- use the auto configurator (run without params)");
 
 			System.exit(1);
 		}
@@ -834,6 +868,34 @@ public class Miner implements UncaughtExceptionHandler {
 								coPrint.updateMsg().p("New Block Height: ")
 									.normData().p(localHeight).unitLabel().p(". ").clr();
 								height = localHeight;
+								endline = true;
+							}
+							
+							if (pause) {
+								try {
+									boolean localMineRecommend = ("mine".equalsIgnoreCase((String) jsonData.get("recommendation")));
+									if (localMineRecommend != mineRecommended) {
+										coPrint.updateMsg().p("Mining will be ").normData().p(localMineRecommend ? "active" : "paused").p(". ").clr();
+										endline = true;
+									}
+									mineRecommended = localMineRecommend;
+								} catch (Exception e) {
+								}
+							}
+							
+							int localIters = ((Long) jsonData.get("argon_time")).intValue();
+							if (mineIters != localIters) {
+								mineIters = localIters;
+								endline = true;
+							}
+							int localThreads = ((Long) jsonData.get("argon_threads")).intValue();
+							if (mineThreads != localThreads) {
+								mineThreads = localThreads;
+								endline = true;
+							}
+							int localMem = ((Long) jsonData.get("argon_mem")).intValue();
+							if (mineMem != localMem) {
+								mineMem = localMem;
 								endline = true;
 							}
 	
@@ -1041,7 +1103,7 @@ public class Miner implements UncaughtExceptionHandler {
 	 *            the worker to update
 	 */
 	protected void updateWorker(Hasher hasher) {
-		hasher.update(getDifficulty(), getBlockData(), getLimit(), getPublicKey(), getHeight());
+		hasher.update(getDifficulty(), getBlockData(), getLimit(), getPublicKey(), getHeight(), getPause(), getIters(), getMem(), getThreads());
 	}
 
 	/**
@@ -1712,6 +1774,22 @@ public class Miner implements UncaughtExceptionHandler {
 	
 	protected long getHeight() {
 		return this.height;
+	}
+	
+	protected boolean getPause() {
+		return !this.mineRecommended;
+	}
+	
+	protected int getIters() {
+		return this.mineIters;
+	}
+	
+	protected int getMem() {
+		return this.mineMem;
+	}
+	
+	protected int getThreads() {
+		return this.mineThreads;
 	}
 
 	private void startTest() {

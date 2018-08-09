@@ -93,6 +93,14 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 	private byte[] encoded;
 	private final Argon2Library argonlib;
 	private final Argon2_type argonType = new Argon2_type(1l);
+	
+	private final JnaUint32 iterations2 = new JnaUint32(4);
+	private final JnaUint32 memory2 = new JnaUint32(16384);
+	private final JnaUint32 parallelism2 = new JnaUint32(4);
+	private final Size_t encLen2;
+	private byte[] encoded2;
+	
+	private int mode = 1;
 
 	public MappedHasher(Miner parent, String id, long target, long maxTime) {
 		super(parent, id, target, maxTime);
@@ -118,7 +126,12 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 
 		encLen = argonlib.argon2_encodedlen(iterations, memory, parallelism, saltLenI, hashLenI,
 				argonType);
+
 		encoded = new byte[encLen.intValue() - 1];
+		
+		encLen2 = argonlib.argon2_encodedlen(iterations2, memory2, parallelism2, saltLenI, hashLenI,
+				argonType);
+		encoded2 = new byte[encLen2.intValue() - 1];
 	}
 
 	private SecureRandom random = new SecureRandom();
@@ -134,9 +147,24 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 	private byte[] fullHashBaseBuffer;
 
 	@Override
-	public void update(BigInteger difficulty, String data, long limit, String publicKey, long blockHeight) {
-		super.update(difficulty, data, limit, publicKey, blockHeight);
+	public void update(BigInteger difficulty, String data, long limit, String publicKey, long blockHeight,
+			boolean pause, int iters, int mem, int threads) {
+		super.update(difficulty, data, limit, publicKey, blockHeight, pause, iters, mem, threads);
 
+		if (this.mem == 16384) {
+			mode = 2;
+			context.t_cost = iterations2;
+			context.m_cost = memory2;
+			context.lanes = parallelism2;
+			context.threads = parallelism2;
+		} else {
+			mode = 1; // assume only the two modes for now.
+			context.t_cost = iterations;
+			context.m_cost = memory;
+			context.lanes = parallelism;
+			context.threads = parallelism;
+		}
+		
 		genNonce();
 	}
 	
@@ -174,8 +202,13 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 		hashBaseBuffer = rawHashBase.getBytes();
 		hashBaseBufferSize = new Size_t(hashBaseBuffer.length);
 		m_hashBaseBuffer = new Memory(hashBaseBuffer.length);
-		fullHashBaseBuffer = new byte[hashBaseBuffer.length + encLen.intValue() - 1];
 
+		if (mode == 1) {
+			fullHashBaseBuffer = new byte[hashBaseBuffer.length + encLen.intValue() - 1];
+		} else if (mode == 2) {
+			fullHashBaseBuffer = new byte[hashBaseBuffer.length + encLen2.intValue() - 1];
+		}
+		
 		m_hashBaseBuffer.write(0, hashBaseBuffer, 0, hashBaseBuffer.length);
 		System.arraycopy(hashBaseBuffer, 0, fullHashBaseBuffer, 0, hashBaseBuffer.length);
 	}
@@ -234,6 +267,13 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 				}
 			}
 			while (doLoop && active) {
+				if (this.pause) {
+					try {
+						Thread.sleep(50);
+					} catch (InterruptedException e) {
+						// ok, moving on.
+					}
+				}
 				statCycle = System.currentTimeMillis();
 				statBegin = System.nanoTime();
 				try {
@@ -253,17 +293,32 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 						System.out.println(" hashes: " + hashCount);
 						System.exit(res);
 					}
-					int res2 = argonlib.encode_ctx(encoded, encLen, context, argonType);
+					int res2 = 0;
+					if (mode == 1) {
+						res2 = argonlib.encode_ctx(encoded, encLen, context, argonType);
+					} else if (mode == 2) {
+						res2 = argonlib.encode_ctx(encoded2, encLen2, context, argonType);
+					}
 					if (res2 != Argon2Library.ARGON2_OK) {
 						System.out.println("ENCODE FAILURE! " + res2);
 					}
 					statArgonEnd = System.nanoTime();
+
+					if (mode == 1) {
+						if (encoded[encoded.length - 1] == 0) {
+							System.out.print("Encoded length failure.");
+						} 
+
+						System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue() - 1);
+					} else if (mode == 2) {
+						if (encoded2[encoded2.length - 1] == 0) {
+							System.out.print("Encoded length failure.");
+						} 
+
+						System.arraycopy(encoded2, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen2.intValue() - 1);
+					}
+
 					
-					if (encoded[encoded.length - 1] == 0) {
-						System.out.print("Encoded length failure.");
-					} 
-					
-					System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue() - 1);
 					// 10-20ns (vs. 1200ns of strings in former StableHasher)
 	
 					statShaBegin = System.nanoTime();
@@ -286,8 +341,13 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 	
 					if (finalDuration > 0 && finalDuration <= this.limit) {
 	
-						// why trim? the raw encoded has a trailing \x00 null char. Trim will remove it, same as we do in the arraycopy by doing encLen - 1.
-						parent.submit(rawNonce, new String(encoded).trim(), finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight, this);
+						if (mode == 1 ) {
+							// why trim? the raw encoded has a trailing \x00 null char. Trim will remove it, same as we do in the arraycopy by doing encLen - 1.
+							parent.submit(rawNonce, new String(encoded).trim(), finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight, this);
+						} else if (mode == 2) {
+							parent.submit(rawNonce, new String(encoded2).trim(), finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight, this);
+						}
+
 						if (finalDuration <= 240) {
 							finds++;
 						} else {

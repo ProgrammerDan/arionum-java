@@ -147,8 +147,9 @@ public class SafeMappedHasher extends Hasher implements Argon2Library.AllocateFu
 			'0','1','2','3','4','5','6','7','8','9','.','/'};
 
 	@Override
-	public void update(BigInteger difficulty, String data, long limit, String publicKey, long blockHeight) {
-		super.update(difficulty, data, limit, publicKey, blockHeight);
+	public void update(BigInteger difficulty, String data, long limit, String publicKey, long blockHeight,
+			boolean pause, int iters, int mem, int threads) {
+		super.update(difficulty, data, limit, publicKey, blockHeight, pause, iters, mem, threads);
 
 		genNonce();
 	}

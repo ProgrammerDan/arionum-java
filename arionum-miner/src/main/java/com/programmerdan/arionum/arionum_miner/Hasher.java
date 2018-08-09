@@ -80,6 +80,11 @@ public abstract class Hasher implements Runnable{
 	protected int hashBufferSize;
 	protected long limit;
 	protected String publicKey;
+	protected String argonString;
+	protected boolean pause;
+	protected int iters;
+	protected int mem;
+	protected int threads;
 	
 	// local stats stores, retrieved "off thread"
 	protected long bestDL;
@@ -154,7 +159,8 @@ public abstract class Hasher implements Runnable{
 		return this.hashTime;
 	}
 	
-	public void update(BigInteger difficulty, String data, long limit, String publicKey, long blockHeight) {
+	public void update(BigInteger difficulty, String data, long limit, String publicKey, long blockHeight,
+			boolean pause, int iters, int mem, int threads) {
 		this.difficulty = difficulty;
 		this.difficultyString = difficulty.toString();
 		if (!data.equals(this.data)) {
@@ -168,6 +174,16 @@ public abstract class Hasher implements Runnable{
 			newHeight(this.blockHeight, blockHeight);
 		}
 		this.blockHeight = blockHeight;
+		
+		boolean doreinit = false;
+		
+		if (this.iters != iters || this.mem != mem || this.threads != threads) {
+			doreinit = true;
+		}
+		this.pause = pause;
+		this.iters = iters;
+		this.mem = mem;
+		this.threads = threads;
 	}
 	
 	/**
