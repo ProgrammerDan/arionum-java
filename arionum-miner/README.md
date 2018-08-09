@@ -11,6 +11,9 @@ Includes a few improvements over the reference implementation, mostly with threa
 
 That way, the miner threads can keep on mining, and aren't held up by the update / submit cycles. 
 
+Please note this release includes at-your-own-risk 80k hardfork support. This is a work in progress! It will likely do weird things!
+As always, refer back to reference PHP miner if issues emerge.
+
 Enjoy!
 
 #### How to run 
