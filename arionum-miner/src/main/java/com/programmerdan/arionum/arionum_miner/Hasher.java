@@ -178,6 +178,7 @@ public abstract class Hasher implements Runnable{
 		boolean doreinit = false;
 		
 		if (this.iters != iters || this.mem != mem || this.threads != threads) {
+			//System.out.println("hasher: reinit to " + mem);
 			doreinit = true;
 		}
 		this.pause = pause;

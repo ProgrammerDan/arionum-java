@@ -817,6 +817,7 @@ public class Miner implements UncaughtExceptionHandler {
 	
 							JSONObject obj = (JSONObject) (new JSONParser())
 									.parse(new InputStreamReader(con.getInputStream()));
+							//System.out.println(obj.toString());
 	
 							if (!"ok".equals((String) obj.get("status"))) {
 								coPrint.updateLabel().p("Update failure: ")
@@ -1520,7 +1521,7 @@ public class Miner implements UncaughtExceptionHandler {
 						con.setDoOutput(true);
 						DataOutputStream out = new DataOutputStream(con.getOutputStream());
 						
-						String sentArgon = argon.substring(30);
+						String sentArgon = argon.substring(getMem() == 16384 ? 29 : 30);
 
 						StringBuilder data = new StringBuilder();
 
@@ -1590,7 +1591,7 @@ public class Miner implements UncaughtExceptionHandler {
 									coPrint.updateMsg().p(" Triggering local check of submission validity: ");
 									
 									String base = publicKey + "-" + nonce + "-" + sBlockId + "-" + sDiff;
-									String argon2 = "$argon2i$v=19$m=524288,t=1,p=1" + URLDecoder.decode(URLEncoder.encode(sentArgon, "UTF-8"), "UTF-8");
+									String argon2 = (getMem() == 16384 ? "$argon2i$v=19$m=16384,t=4,p=4" : "$argon2i$v=19$m=524288,t=1,p=1") + URLDecoder.decode(URLEncoder.encode(sentArgon, "UTF-8"), "UTF-8");
 									byte[] baseBytes = base.getBytes();
 									
 									int ret = Argon2Library.INSTANCE.argon2i_verify(argon2.getBytes(), baseBytes, new Size_t(baseBytes.length));

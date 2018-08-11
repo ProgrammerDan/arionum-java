@@ -153,16 +153,10 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 
 		if (this.mem == 16384) {
 			mode = 2;
-			context.t_cost = iterations2;
-			context.m_cost = memory2;
-			context.lanes = parallelism2;
-			context.threads = parallelism2;
+			//System.out.println("Hasher " + getID() + " updated to mode 2");
 		} else {
 			mode = 1; // assume only the two modes for now.
-			context.t_cost = iterations;
-			context.m_cost = memory;
-			context.lanes = parallelism;
-			context.threads = parallelism;
+			//System.out.println("Hasher " + getID() + " updated to mode 1");
 		}
 		
 		genNonce();
@@ -273,6 +267,12 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 					} catch (InterruptedException e) {
 						// ok, moving on.
 					}
+					continue;
+				} else {
+					try {
+						Thread.sleep(0);
+					} catch (InterruptedException e) {
+					}
 				}
 				statCycle = System.currentTimeMillis();
 				statBegin = System.nanoTime();
@@ -282,6 +282,19 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 	
 					statArgonBegin = System.nanoTime();
 					// set argon params in context..
+
+					int smode = mode;
+					if (mode == 2) {
+						context.t_cost = iterations2;
+						context.m_cost = memory2;
+						context.lanes = parallelism2;
+						context.threads = parallelism2;
+					} else {
+						context.t_cost = iterations;
+						context.m_cost = memory;
+						context.lanes = parallelism;
+						context.threads = parallelism;
+					}
 					context.out = new Memory(32l);
 					context.salt = m_salt;
 					context.pwdlen = new JnaUint32(hashBaseBuffer.length);
@@ -294,66 +307,69 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 						System.exit(res);
 					}
 					int res2 = 0;
-					if (mode == 1) {
-						res2 = argonlib.encode_ctx(encoded, encLen, context, argonType);
-					} else if (mode == 2) {
-						res2 = argonlib.encode_ctx(encoded2, encLen2, context, argonType);
-					}
-					if (res2 != Argon2Library.ARGON2_OK) {
-						System.out.println("ENCODE FAILURE! " + res2);
-					}
-					statArgonEnd = System.nanoTime();
-
-					if (mode == 1) {
-						if (encoded[encoded.length - 1] == 0) {
-							System.out.print("Encoded length failure.");
-						} 
-
-						System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue() - 1);
-					} else if (mode == 2) {
-						if (encoded2[encoded2.length - 1] == 0) {
-							System.out.print("Encoded length failure.");
-						} 
-
-						System.arraycopy(encoded2, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen2.intValue() - 1);
-					}
-
-					
-					// 10-20ns (vs. 1200ns of strings in former StableHasher)
-	
-					statShaBegin = System.nanoTime();
-					
-					byteBase = sha512.digest(fullHashBaseBuffer);
-					for (int i = 0; i < 5; i++) {
-						byteBase = sha512.digest(byteBase);
-					}
-					
-					statShaEnd = System.nanoTime();
-					// shas total 4900-5000ns for all 6 digests, or < 1000ns ea
-	
-					StringBuilder duration = new StringBuilder(25);
-					duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
-							.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
-							.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
-	
-					long finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
-					// 385 ns for duration
-	
-					if (finalDuration > 0 && finalDuration <= this.limit) {
-	
-						if (mode == 1 ) {
-							// why trim? the raw encoded has a trailing \x00 null char. Trim will remove it, same as we do in the arraycopy by doing encLen - 1.
-							parent.submit(rawNonce, new String(encoded).trim(), finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight, this);
+					long finalDuration = 0;
+					if (smode == mode) { // check if mode changdd
+						if (mode == 1) {
+							res2 = argonlib.encode_ctx(encoded, encLen, context, argonType);
 						} else if (mode == 2) {
-							parent.submit(rawNonce, new String(encoded2).trim(), finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight, this);
+							res2 = argonlib.encode_ctx(encoded2, encLen2, context, argonType);
+						}
+						if (res2 != Argon2Library.ARGON2_OK) {
+							System.out.println("ENCODE FAILURE! " + res2);
+						}
+						statArgonEnd = System.nanoTime();
+
+						if (mode == 1) {
+							if (encoded[encoded.length - 1] == 0) {
+								//System.out.print("Encoded length failure.");
+							} 
+
+							System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue() - 1);
+						} else if (mode == 2) {
+							if (encoded2[encoded2.length - 1] == 0) {
+								System.out.print("Encoded length failure.");
+							} 
+
+							System.arraycopy(encoded2, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen2.intValue() - 1);
 						}
 
-						if (finalDuration <= 240) {
-							finds++;
-						} else {
-							shares++;
+						
+						// 10-20ns (vs. 1200ns of strings in former StableHasher)
+		
+						statShaBegin = System.nanoTime();
+						
+						byteBase = sha512.digest(fullHashBaseBuffer);
+						for (int i = 0; i < 5; i++) {
+							byteBase = sha512.digest(byteBase);
 						}
-						genNonce(); // only gen a new nonce once we exhaust the one we had
+						
+						statShaEnd = System.nanoTime();
+						// shas total 4900-5000ns for all 6 digests, or < 1000ns ea
+		
+						StringBuilder duration = new StringBuilder(25);
+						duration.append(byteBase[10] & 0xFF).append(byteBase[15] & 0xFF).append(byteBase[20] & 0xFF)
+								.append(byteBase[23] & 0xFF).append(byteBase[31] & 0xFF).append(byteBase[40] & 0xFF)
+								.append(byteBase[45] & 0xFF).append(byteBase[55] & 0xFF);
+		
+						finalDuration = new BigInteger(duration.toString()).divide(this.difficulty).longValue();
+						// 385 ns for duration
+		
+						if (finalDuration > 0 && finalDuration <= this.limit) {
+		
+							if (mode == 1 ) {
+								// why trim? the raw encoded has a trailing \x00 null char. Trim will remove it, same as we do in the arraycopy by doing encLen - 1.
+								parent.submit(rawNonce, new String(encoded).trim(), finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight, this);
+							} else if (mode == 2) {
+								parent.submit(rawNonce, new String(encoded2).trim(), finalDuration, this.difficulty.longValue(), this.getType(), this.blockHeight, this);
+							}
+
+							if (finalDuration <= 240) {
+								finds++;
+							} else {
+								shares++;
+							}
+							genNonce(); // only gen a new nonce once we exhaust the one we had
+						}
 					}
 	
 					hashCount++;
