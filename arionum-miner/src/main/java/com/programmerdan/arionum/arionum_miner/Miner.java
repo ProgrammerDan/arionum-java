@@ -650,7 +650,7 @@ public class Miner implements UncaughtExceptionHandler {
 			worker = nameSB.toString(); // sanitize...
 			
 			coPrint = new CPrint(colors);
-			coPrint.a(Attribute.BOLD).f(FColor.CYAN).ln("Running Version 0.2.5");
+			coPrint.a(Attribute.BOLD).f(FColor.CYAN).ln("Running Version 0.2.6.1");
 			coPrint.a(Attribute.BOLD).f(FColor.CYAN).ln("Active config:")
 				.clr().f(FColor.CYAN).p("  type: ").f(FColor.GREEN).ln(this.type)
 				.clr().f(FColor.CYAN).p("  node: ").f(FColor.GREEN).ln(this.node);

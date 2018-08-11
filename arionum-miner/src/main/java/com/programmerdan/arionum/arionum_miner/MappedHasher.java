@@ -153,10 +153,8 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 
 		if (this.mem == 16384) {
 			mode = 2;
-			//System.out.println("Hasher " + getID() + " updated to mode 2");
 		} else {
 			mode = 1; // assume only the two modes for now.
-			//System.out.println("Hasher " + getID() + " updated to mode 1");
 		}
 		
 		genNonce();
@@ -268,11 +266,6 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 						// ok, moving on.
 					}
 					continue;
-				} else {
-					try {
-						Thread.sleep(0);
-					} catch (InterruptedException e) {
-					}
 				}
 				statCycle = System.currentTimeMillis();
 				statBegin = System.nanoTime();
@@ -308,7 +301,7 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 					}
 					int res2 = 0;
 					long finalDuration = 0;
-					if (smode == mode) { // check if mode changdd
+					if (smode == mode) { // check if mode changed
 						if (mode == 1) {
 							res2 = argonlib.encode_ctx(encoded, encLen, context, argonType);
 						} else if (mode == 2) {
@@ -321,7 +314,7 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 
 						if (mode == 1) {
 							if (encoded[encoded.length - 1] == 0) {
-								//System.out.print("Encoded length failure.");
+								System.out.print("Encoded length failure.");
 							} 
 
 							System.arraycopy(encoded, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen.intValue() - 1);
@@ -332,7 +325,6 @@ public class MappedHasher extends Hasher implements Argon2Library.AllocateFuncti
 
 							System.arraycopy(encoded2, 0, fullHashBaseBuffer, hashBaseBufferSize.intValue(), encLen2.intValue() - 1);
 						}
-
 						
 						// 10-20ns (vs. 1200ns of strings in former StableHasher)
 		
